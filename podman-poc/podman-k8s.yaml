@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podman-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: podman-app
+  template:
+    metadata:
+      labels:
+        app: podman-app
+    spec:
+      containers:
+        - name: podman-app
+          image: keerthanalp/podman-poc-app:1.0
+          ports:
+            - containerPort: 3000
+
+        - name: mongodb
+          image: mongo:8
+          ports:
+            - containerPort: 27017

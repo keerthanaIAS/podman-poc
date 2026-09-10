@@ -1,0 +1,87 @@
+# Save the output of this file and use kubectl create -f to import
+# it into Kubernetes.
+#
+# Created with podman-6.1.1
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    io.kubernetes.cri-o.SandboxID/podman-app: b49ea2614a7c99ccadc60b2c5ae9a67b0d083fbdfa0d5277cbbc89b7c7f9aa4e
+    io.kubernetes.cri-o.SandboxID/podman-mongodb: b49ea2614a7c99ccadc60b2c5ae9a67b0d083fbdfa0d5277cbbc89b7c7f9aa4e
+  creationTimestamp: "2026-09-10T10:48:32Z"
+  labels:
+    app: podman-demo-pod
+  name: podman-demo-pod
+spec:
+  containers:
+  - args:
+    - node
+    - app.js
+    image: localhost/podman-poc-app:pod
+    name: podman-app
+    ports:
+    - containerPort: 3000
+      hostPort: 3000
+    - containerPort: 27017
+      hostPort: 27017
+  - args:
+    - mongod
+    image: docker.io/library/mongo:8
+    name: podman-mongodb
+    volumeMounts:
+    - mountPath: /data/db
+      name: mongo-data-pvc
+    - mountPath: /data/configdb
+      name: 4c8dc3d870ff03d4892e16c98d160314b7693b27636fed00abf842c3e304f26d-pvc
+  volumes:
+  - name: mongo-data-pvc
+    persistentVolumeClaim:
+      claimName: mongo-data
+  - name: 4c8dc3d870ff03d4892e16c98d160314b7693b27636fed00abf842c3e304f26d-pvc
+    persistentVolumeClaim:
+      claimName: 4c8dc3d870ff03d4892e16c98d160314b7693b27636fed00abf842c3e304f26d
+
+
+# What Podman generated
+# ---------------------
+# Your Podman Pod:
+
+# podman-demo-pod
+# ├── podman-app
+# └── podman-mongodb
+
+# became a Kubernetes:
+# ---------------------
+# kind: Pod
+
+# with two containers:
+# ---------------------
+# Kubernetes Pod
+# ├── podman-app
+# │   └── localhost/podman-poc-app:pod
+# │
+# └── podman-mongodb
+#     └── mongo:8
+
+# It also converted your Podman volume into Kubernetes-style volume references:
+# ----------------------------------------------------------------------------
+# persistentVolumeClaim:
+#   claimName: mongo-data
+
+# One important problem
+# ---------------------
+# This line:
+# image: localhost/podman-poc-app:pod
+# is a local Podman image.
+
+# Kubernetes generally cannot pull that image from your Podman's local image store.                                   -->*important point*
+
+# That's actually a perfect transition to our next POC.
+
+# We'll push your Node.js image to a registry and then change:
+# ------------------------------------------------------------
+# image: localhost/podman-poc-app:pod
+
+# to something like:
+# -------------------
+# image: <registry>/<username>/podman-poc-app:1.0
