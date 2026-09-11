@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  # ---------- MongoDB (shared DB for all microservices) ----------
+  mongodb:
+    image: docker.io/library/mongo:7
+    container_name: mern-mongodb
+    restart: always
+    environment:
+      MONGO_INITDB_DATABASE: merndb
+    volumes:
+      - mongo_data:/data/db
+
+  # ---------- User Microservice ----------
+  user-service:
+    build: ./user-service
+    container_name: mern-user-service
+    restart: always
+    environment:
+      MONGO_URI: mongodb://localhost:27017/merndb
+    depends_on:
+      - mongodb
+
+  # ---------- Product Microservice ----------
+  product-service:
+    build: ./product-service
+    container_name: mern-product-service
+    restart: always
+    environment:
+      MONGO_URI: mongodb://localhost:27017/merndb
+    depends_on:
+      - mongodb
+
+  # ---------- API Gateway (public entry point) ----------
+  api-gateway:
+    build: ./api-gateway
+    container_name: mern-api-gateway
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - user-service
+      - product-service
+
+volumes:
+  mongo_data:
+
+# Note: podman-compose by default puts services on a bridge network, not a shared pod. 
+# To get the true Podman pod advantage, we'll also show the pure Podman CLI approach below.
