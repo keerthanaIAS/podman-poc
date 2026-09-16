@@ -6,7 +6,7 @@ pipeline {
 
         choice(
             name: 'ENGINE',
-            choices: ['docker', 'podman'],
+            choices: ['podman'],
             description: 'Container engine'
         )
 
@@ -29,7 +29,11 @@ pipeline {
 
         IMAGE_TAG = "cube-root-ms:${BUILD_NUMBER}"
 
-        CONTAINER_NAME = "cube-root-ms-poc"
+        CONTAINER_NAME = "cube-root-ms-jenkins"
+
+        APP_PORT = "3101"
+
+        PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${env.PATH}"
     }
 
     stages {
@@ -38,162 +42,311 @@ pipeline {
 
             steps {
 
-                echo "Engine: ${params.ENGINE}"
+                echo "================================"
+                echo "Pipeline Parameters"
+                echo "================================"
 
-                echo "Requests: ${params.TOTAL_REQUESTS}"
-
-                echo "Concurrency: ${params.CONCURRENCY}"
+                echo "Engine       : ${params.ENGINE}"
+                echo "Requests     : ${params.TOTAL_REQUESTS}"
+                echo "Concurrency  : ${params.CONCURRENCY}"
+                echo "Build Number : ${BUILD_NUMBER}"
             }
         }
+
 
         stage('Validate Tools') {
 
             steps {
 
-                sh """
-                    ${params.ENGINE} --version
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Validate Tools"
+                    echo "================================"
+
+                    echo "PATH:"
+                    echo "$PATH"
+
+                    echo ""
+                    echo "Podman:"
+                    which podman
+                    podman --version
+
+                    echo ""
+                    echo "Podman Info:"
+                    podman info
+
+                    echo ""
+                    echo "Node:"
+                    which node
                     node --version
+
+                    echo ""
+                    echo "NPM:"
+                    which npm
                     npm --version
+
+                    echo ""
+                    echo "Kubectl:"
+                    which kubectl
                     kubectl version --client
-                """
+
+                    echo ""
+                    echo "Curl:"
+                    which curl
+                    curl --version | head -1
+                '''
             }
         }
+
 
         stage('Build Image') {
 
             steps {
 
-                sh """
-                    ${params.ENGINE} build \
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Build Podman Image"
+                    echo "================================"
+
+                    podman build \
                       --build-arg API_NEWTWELVE_CACHE_BUST_RESYNC=${BUILD_NUMBER} \
                       -t ${IMAGE_TAG} .
-                """
+
+                    echo ""
+                    echo "Image created:"
+                    podman images | grep cube-root-ms
+                '''
             }
         }
+
 
         stage('Start Container') {
 
             steps {
 
-                sh """
-                    ${params.ENGINE} rm -f ${CONTAINER_NAME} || true
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Start Podman Container"
+                    echo "================================"
+
+                    podman rm -f ${CONTAINER_NAME} 2>/dev/null || true
 
                     mkdir -p data logs
 
-                    ${params.ENGINE} run -d \
+                    podman run -d \
                       --name ${CONTAINER_NAME} \
-                      -p 3001:3001 \
-                      -e CONTAINER_ENGINE=${params.ENGINE} \
-                      -v "\$(pwd)/data:/data" \
-                      -v "\$(pwd)/logs:/logs" \
+                      -p ${APP_PORT}:3001 \
+                      -e CONTAINER_ENGINE=podman \
+                      -v "$(pwd)/data:/data" \
+                      -v "$(pwd)/logs:/logs" \
                       ${IMAGE_TAG}
-                """
+
+                    echo ""
+                    echo "Container:"
+                    podman ps
+                '''
             }
         }
+
 
         stage('Health Check') {
 
             steps {
 
                 sh '''
+                    echo "================================"
+                    echo "Health Check"
+                    echo "================================"
+
                     for i in $(seq 1 30)
                     do
-                      if curl -sf http://localhost:3001/health
-                      then
-                        echo "Application is healthy"
-                        exit 0
-                      fi
 
-                      sleep 2
+                        if curl -sf http://localhost:${APP_PORT}/health
+                        then
+                            echo ""
+                            echo "Application is healthy"
+                            exit 0
+                        fi
+
+                        echo "Waiting for application..."
+                        sleep 2
+
                     done
 
+                    echo ""
                     echo "Application failed health check"
+
+                    echo ""
+                    echo "Container logs:"
+                    podman logs ${CONTAINER_NAME} || true
 
                     exit 1
                 '''
             }
         }
 
+
         stage('Transaction Test') {
 
             steps {
 
-                sh """
-                    TOTAL_REQUESTS=${params.TOTAL_REQUESTS} \
-                    CONCURRENCY=${params.CONCURRENCY} \
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Transaction Load Test"
+                    echo "================================"
+
+                    TOTAL_REQUESTS=${TOTAL_REQUESTS} \
+                    CONCURRENCY=${CONCURRENCY} \
                     ./scripts/load-test.sh
-                """
+                '''
             }
         }
+
 
         stage('Storage Test') {
 
             steps {
 
-                sh """
-                    ./scripts/storage-test.sh ${params.ENGINE}
-                """
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Storage Persistence Test"
+                    echo "================================"
+
+                    ./scripts/storage-test.sh podman
+                '''
             }
         }
+
 
         stage('Log Test') {
 
             steps {
 
-                sh """
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Application Log Test"
+                    echo "================================"
+
                     test -s logs/application.log
 
                     echo "Application logs exist"
 
+                    echo ""
+                    echo "Log line count:"
                     wc -l logs/application.log
-                """
+
+                    echo ""
+                    echo "Last 5 log entries:"
+                    tail -5 logs/application.log
+                '''
             }
         }
+
 
         stage('Resource Test') {
 
             steps {
 
-                sh """
-                    ./scripts/resource-test.sh ${params.ENGINE}
-                """
+                sh '''
+                    set -e
+
+                    echo "================================"
+                    echo "Resource Test"
+                    echo "================================"
+
+                    ./scripts/resource-test.sh podman
+                '''
             }
         }
+
 
         stage('Container Logs') {
 
             steps {
 
-                sh """
-                    ${params.ENGINE} logs ${CONTAINER_NAME} \
+                sh '''
+                    echo "================================"
+                    echo "Collect Container Logs"
+                    echo "================================"
+
+                    podman logs ${CONTAINER_NAME} \
                       > container.log 2>&1 || true
-                """
+
+                    echo ""
+                    echo "Container log file:"
+                    wc -l container.log
+                '''
             }
         }
+
 
         stage('Container Inspect') {
 
             steps {
 
-                sh """
-                    ${params.ENGINE} inspect ${CONTAINER_NAME} \
+                sh '''
+                    echo "================================"
+                    echo "Container Inspect"
+                    echo "================================"
+
+                    podman inspect ${CONTAINER_NAME} \
                       > container-inspect.json
-                """
+
+                    echo "Container inspect saved"
+                '''
             }
         }
     }
+
 
     post {
 
         always {
 
-            archiveArtifacts artifacts:
-                'container.log,container-inspect.json,logs/application.log,data/transactions.log',
-                allowEmptyArchive: true
+            echo "================================"
+            echo "Pipeline Cleanup"
+            echo "================================"
 
-            sh """
-                ${params.ENGINE} rm -f ${CONTAINER_NAME} || true
-            """
+            archiveArtifacts(
+                artifacts: 'container.log,container-inspect.json,logs/application.log,data/transactions.log',
+                allowEmptyArchive: true
+            )
+
+            sh '''
+                podman rm -f ${CONTAINER_NAME} 2>/dev/null || true
+            '''
+        }
+
+
+        success {
+
+            echo "================================"
+            echo "PIPELINE SUCCESS"
+            echo "================================"
+
+            echo "Podman build and application tests completed successfully."
+        }
+
+
+        failure {
+
+            echo "================================"
+            echo "PIPELINE FAILED"
+            echo "================================"
+
+            echo "Check the failed stage in Jenkins console."
         }
     }
 }
