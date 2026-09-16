@@ -1,0 +1,199 @@
+pipeline {
+
+    agent any
+
+    parameters {
+
+        choice(
+            name: 'ENGINE',
+            choices: ['docker', 'podman'],
+            description: 'Container engine'
+        )
+
+        choice(
+            name: 'TOTAL_REQUESTS',
+            choices: ['1000', '10000', '100000'],
+            description: 'Transaction test count'
+        )
+
+        choice(
+            name: 'CONCURRENCY',
+            choices: ['10', '20', '50'],
+            description: 'Concurrent requests'
+        )
+    }
+
+    environment {
+
+        APP_NAME = "cube-root-ms"
+
+        IMAGE_TAG = "cube-root-ms:${BUILD_NUMBER}"
+
+        CONTAINER_NAME = "cube-root-ms-poc"
+    }
+
+    stages {
+
+        stage('Print Parameters') {
+
+            steps {
+
+                echo "Engine: ${params.ENGINE}"
+
+                echo "Requests: ${params.TOTAL_REQUESTS}"
+
+                echo "Concurrency: ${params.CONCURRENCY}"
+            }
+        }
+
+        stage('Validate Tools') {
+
+            steps {
+
+                sh """
+                    ${params.ENGINE} --version
+                    node --version
+                    npm --version
+                    kubectl version --client
+                """
+            }
+        }
+
+        stage('Build Image') {
+
+            steps {
+
+                sh """
+                    ${params.ENGINE} build \
+                      --build-arg API_NEWTWELVE_CACHE_BUST_RESYNC=${BUILD_NUMBER} \
+                      -t ${IMAGE_TAG} .
+                """
+            }
+        }
+
+        stage('Start Container') {
+
+            steps {
+
+                sh """
+                    ${params.ENGINE} rm -f ${CONTAINER_NAME} || true
+
+                    mkdir -p data logs
+
+                    ${params.ENGINE} run -d \
+                      --name ${CONTAINER_NAME} \
+                      -p 3001:3001 \
+                      -e CONTAINER_ENGINE=${params.ENGINE} \
+                      -v "\$(pwd)/data:/data" \
+                      -v "\$(pwd)/logs:/logs" \
+                      ${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Health Check') {
+
+            steps {
+
+                sh '''
+                    for i in $(seq 1 30)
+                    do
+                      if curl -sf http://localhost:3001/health
+                      then
+                        echo "Application is healthy"
+                        exit 0
+                      fi
+
+                      sleep 2
+                    done
+
+                    echo "Application failed health check"
+
+                    exit 1
+                '''
+            }
+        }
+
+        stage('Transaction Test') {
+
+            steps {
+
+                sh """
+                    TOTAL_REQUESTS=${params.TOTAL_REQUESTS} \
+                    CONCURRENCY=${params.CONCURRENCY} \
+                    ./scripts/load-test.sh
+                """
+            }
+        }
+
+        stage('Storage Test') {
+
+            steps {
+
+                sh """
+                    ./scripts/storage-test.sh ${params.ENGINE}
+                """
+            }
+        }
+
+        stage('Log Test') {
+
+            steps {
+
+                sh """
+                    test -s logs/application.log
+
+                    echo "Application logs exist"
+
+                    wc -l logs/application.log
+                """
+            }
+        }
+
+        stage('Resource Test') {
+
+            steps {
+
+                sh """
+                    ./scripts/resource-test.sh ${params.ENGINE}
+                """
+            }
+        }
+
+        stage('Container Logs') {
+
+            steps {
+
+                sh """
+                    ${params.ENGINE} logs ${CONTAINER_NAME} \
+                      > container.log 2>&1 || true
+                """
+            }
+        }
+
+        stage('Container Inspect') {
+
+            steps {
+
+                sh """
+                    ${params.ENGINE} inspect ${CONTAINER_NAME} \
+                      > container-inspect.json
+                """
+            }
+        }
+    }
+
+    post {
+
+        always {
+
+            archiveArtifacts artifacts:
+                'container.log,container-inspect.json,logs/application.log,data/transactions.log',
+                allowEmptyArchive: true
+
+            sh """
+                ${params.ENGINE} rm -f ${CONTAINER_NAME} || true
+            """
+        }
+    }
+}

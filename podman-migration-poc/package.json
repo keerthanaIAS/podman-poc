@@ -1,0 +1,12 @@
+{
+  "name": "cube-root-ms-podman-poc",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "fastify": "4.28.1"
+  },
+  "devDependencies": {}
+}
