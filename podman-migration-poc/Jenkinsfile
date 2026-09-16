@@ -104,6 +104,7 @@ pipeline {
         stage('Build Image') {
 
             steps {
+                dir('podman-migration-poc') {
 
                 sh '''
                     set -e
@@ -120,6 +121,7 @@ pipeline {
                     echo "Image created:"
                     podman images | grep cube-root-ms
                 '''
+                }
             }
         }
 
