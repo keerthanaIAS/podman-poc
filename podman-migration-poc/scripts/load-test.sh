@@ -15,7 +15,7 @@ echo "Concurrency  : $CONCURRENCY"
 seq $TOTAL_REQUESTS | xargs -P $CONCURRENCY -I {} \
   curl -s \
   -X POST \
-  http://localhost:3001/transactions \
+  http://localhost:3101/transactions \
   -H "Content-Type: application/json" \
   -d "{\"transactionId\":\"TXN-{}\",\"amount\":100}" \
   > /dev/null
@@ -26,4 +26,4 @@ echo "Load test completed"
 echo ""
 echo "Application metrics:"
 
-curl -s http://localhost:3001/metrics/local
+curl -s http://localhost:3101/metrics/local
