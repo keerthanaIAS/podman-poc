@@ -1664,3 +1664,1665 @@ emptyDir: {}
 So when the pod is recreated, those file logs disappear.
 That is not a Podman failure. It's a Kubernetes logging/storage design issue. In production, application logs should normally go to stdout/stderr and be collected by the logging system.
 
+###### Logs Test:
+
+keerthana@Mac-2910 podman-poc % cp -R podman-migration-poc ~/podman-migration-poc
+keerthana@Mac-2910 podman-poc % pwd
+/Applications/podman-poc
+keerthana@Mac-2910 podman-poc % cd ~/podman-migration-poc
+keerthana@Mac-2910 podman-migration-poc % pwd
+/Users/keerthana/podman-migration-poc
+keerthana@Mac-2910 podman-migration-poc % ls -ld data logs
+drwxr-xr-x@ 2 keerthana  staff  64 Sep 17 10:39 data
+drwxr-xr-x@ 2 keerthana  staff  64 Sep 17 10:39 logs
+keerthana@Mac-2910 podman-migration-poc % podman run -d \
+  --name cube-root-ms-podman \
+  -p 3001:3001 \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/logs:/logs" \
+  -e CONTAINER_ENGINE=podman \
+  localhost/cube-root-ms:podman-poc
+4e64357e7c2f2e42f9c09f4f804a4c1a64ea143218abcf80f5779ba1b0ed17bb
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND     CREATED        STATUS        PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start   8 seconds ago  Up 8 seconds  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman logs cube-root-ms-podman
+
+> cube-root-ms-podman-poc@1.0.0 start
+> node server.js
+
+Application running on port 3001
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"4e64357e7c2f"}%         
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-LOG-001","amount":100}'
+{"success":true,"transaction":{"transactionId":"TXN-LOG-001","amount":100,"timestamp":"2026-09-17T05:10:12.689Z"}}%         
+keerthana@Mac-2910 podman-migration-poc % cat logs/application.log
+cat data/transactions.log
+{"timestamp":"2026-09-17T05:10:12.693Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-001"}
+{"transactionId":"TXN-LOG-001","amount":100,"timestamp":"2026-09-17T05:10:12.689Z"}
+keerthana@Mac-2910 podman-migration-poc % mkdir -p monitoring/promtail
+mkdir -p monitoring/loki
+mkdir -p monitoring/grafana
+keerthana@Mac-2910 podman-migration-poc % find monitoring -maxdepth 2 -type d
+monitoring
+monitoring/loki
+monitoring/promtail
+monitoring/grafana
+keerthana@Mac-2910 podman-migration-poc % cd ~/podman-migration-poc
+keerthana@Mac-2910 podman-migration-poc % cat > monitoring/loki/loki-config.yml <<'EOF'
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  allow_structured_metadata: true
+  volume_enabled: true
+
+compactor:
+  working_directory: /loki/compactor
+EOF
+keerthana@Mac-2910 podman-migration-poc % cat monitoring/loki/loki-config.yml
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  allow_structured_metadata: true
+  volume_enabled: true
+
+compactor:
+  working_directory: /loki/compactor
+keerthana@Mac-2910 podman-migration-poc % podman pull docker.io/grafana/loki:3.5.0
+Trying to pull docker.io/grafana/loki:3.5.0...
+Getting image source signatures
+Copying blob sha256:d82bc7a76a838c9a4a6025192429c2fed58f73742ef1fb9c8bb7b995fc3b7213
+Copying blob sha256:2ae251fec02fb291b816530bdcf7100d568a00cf07a17962297fc48f43198368
+Copying blob sha256:4e9f20d26c878a5db592123720f66b04bddf045879f6c0ad45e069a991543fa9
+Copying blob sha256:0f8b424aa0b96c1c388a5fd4d90735604459256336853082afb61733438872b5
+Copying blob sha256:2e4cf50eeb92ac3a7afe75e15d96a26dee99449f86b46c75b5d95f4418a5bca0
+Copying blob sha256:d557676654e572af3e3173c90e7874644207fda32cd87e9d3d66b5d7b98a7b21
+Copying blob sha256:d858cbc252ade14879807ff8dbc3043a26bbdb92087da98cda831ee040b172b3
+Copying blob sha256:1069fc2daed1aceff7232f4b8ab21200dd3d8b04f61be9da86977a34a105dfdc
+Copying blob sha256:b40161cd83fc5d470d6abe50e87aa288481b6b89137012881d74187cfbf9f502
+Copying blob sha256:3f4e2c5863480125882d92060440a5250766bce764fee10acdbac18c872e4dc7
+Copying blob sha256:80a8c047508ae5cd6a591060fc43422cb8e3aea1bd908d913e8f0146e2297fea
+Copying blob sha256:ffeccacd1a73f8a1055b6788095c49c08bd4c9aed41238cd847871ed8f4bc8da
+Copying blob sha256:acc196203923cd80240885f8d30c2a5f68925c13d0142a59c21cff393f156ca9
+Copying blob sha256:9ff8ca30ade172a134e9c869d63886fda40dae5e2804e3649bbd0c3848343ec4
+Copying blob sha256:1975d20307b8cf0ec57241e2acfe01b60e8bf5157a5e6ee2ecc1431e4e0608b1
+Copying blob sha256:b400795ea231c6a25410446fb51718f306847e44a8317b8d9f398f1371b3c1d1
+Copying config sha256:c8f7864de9ad688bb9219730b06c8941b86997dd2122f7066a6289e63c6f87e7
+Writing manifest to image destination
+c8f7864de9ad688bb9219730b06c8941b86997dd2122f7066a6289e63c6f87e7
+keerthana@Mac-2910 podman-migration-poc % podman run -d \
+  --name loki \
+  -p 3100:3100 \
+  -v "$(pwd)/monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro" \
+  -v "$(pwd)/monitoring/loki:/loki" \
+  docker.io/grafana/loki:3.5.0 \
+  -config.file=/etc/loki/config.yml
+b22e8465e98603cf1d6a49e7bf09b958caf8df80deff18f79448fd812729e398
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start             5 minutes ago   Up 5 minutes   0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  15 seconds ago  Up 16 seconds  0.0.0.0:3100->3100/tcp  loki
+keerthana@Mac-2910 podman-migration-poc % podman logs loki
+level=info ts=2026-09-17T05:14:39.980302393Z caller=main.go:126 msg="Starting Loki" version="(version=3.5.0, branch=k248, revision=4b16bc4f)"
+level=info ts=2026-09-17T05:14:39.980331226Z caller=main.go:127 msg="Loading configuration file" filename=/etc/loki/config.yml
+level=info ts=2026-09-17T05:14:39.981232851Z caller=server.go:368 msg="server listening on addresses" http=[::]:3100 grpc=[::]:9095
+level=info ts=2026-09-17T05:14:39.982379268Z caller=modules.go:1420 msg="Ruler storage is not configured; ruler will not be started."
+level=info ts=2026-09-17T05:14:39.98810006Z caller=table_manager.go:136 index-store=tsdb-2024-01-01 msg="uploading tables"
+level=info ts=2026-09-17T05:14:39.989737351Z caller=table_manager.go:300 index-store=tsdb-2024-01-01 msg="query readiness setup completed" duration=1.833µs distinct_users_len=0 distinct_users=
+level=info ts=2026-09-17T05:14:39.989771976Z caller=shipper.go:165 index-store=tsdb-2024-01-01 msg="starting index shipper in RW mode"
+level=info ts=2026-09-17T05:14:39.998804101Z caller=head_manager.go:308 index-store=tsdb-2024-01-01 component=tsdb-head-manager msg="loaded wals by period" groups=0
+level=info ts=2026-09-17T05:14:39.999174643Z caller=manager.go:86 index-store=tsdb-2024-01-01 component=tsdb-manager msg="loaded leftover local indices" err=null successful=true buckets=0 indices=0 failures=0
+level=info ts=2026-09-17T05:14:39.999532393Z caller=head_manager.go:308 index-store=tsdb-2024-01-01 component=tsdb-head-manager msg="loaded wals by period" groups=0
+level=warn ts=2026-09-17T05:14:40.009778185Z caller=modules.go:1443 msg="RulerStorage is nil. Not starting the ruler."
+level=info ts=2026-09-17T05:14:40.009894268Z caller=worker.go:131 component=querier msg="Starting querier worker using query-scheduler and scheduler ring for addresses"
+level=info ts=2026-09-17T05:14:40.027446352Z caller=module_service.go:82 msg=starting module=cache-generation-loader
+level=info ts=2026-09-17T05:14:40.02750256Z caller=module_service.go:82 msg=starting module=server
+level=info ts=2026-09-17T05:14:40.027533852Z caller=module_service.go:82 msg=starting module=query-frontend-tripperware
+level=info ts=2026-09-17T05:14:40.027539727Z caller=module_service.go:82 msg=starting module=memberlist-kv
+level=info ts=2026-09-17T05:14:40.027564018Z caller=module_service.go:82 msg=starting module=ring
+level=info ts=2026-09-17T05:14:40.027716393Z caller=module_service.go:82 msg=starting module=query-scheduler-ring
+level=info ts=2026-09-17T05:14:40.027716852Z caller=ring.go:361 msg="ring doesn't exist in KV store yet"
+level=info ts=2026-09-17T05:14:40.027783852Z caller=ring.go:361 msg="ring doesn't exist in KV store yet"
+level=info ts=2026-09-17T05:14:40.027810685Z caller=module_service.go:82 msg=starting module=analytics
+level=info ts=2026-09-17T05:14:40.027866685Z caller=module_service.go:82 msg=starting module=store
+level=info ts=2026-09-17T05:14:40.027929977Z caller=basic_lifecycler.go:301 msg="instance not found in the ring" instance=b22e8465e986 ring=scheduler
+level=info ts=2026-09-17T05:14:40.027939393Z caller=basic_lifecycler_delegates.go:63 msg="not loading tokens from file, tokens file pathis empty"
+level=info ts=2026-09-17T05:14:40.027962852Z caller=module_service.go:82 msg=starting module=ingester-querier
+level=info ts=2026-09-17T05:14:40.028066602Z caller=ringmanager.go:186 msg="waiting until scheduler is JOINING in the ring"
+level=info ts=2026-09-17T05:14:40.02808056Z caller=ringmanager.go:190 msg="scheduler is JOINING in the ring"
+level=info ts=2026-09-17T05:14:40.028102893Z caller=module_service.go:82 msg=starting module=rule-evaluator
+level=info ts=2026-09-17T05:14:40.028106893Z caller=module_service.go:82 msg=starting module=compactor
+level=info ts=2026-09-17T05:14:40.028121435Z caller=ringmanager.go:199 msg="waiting until scheduler is ACTIVE in the ring"
+level=info ts=2026-09-17T05:14:40.028125518Z caller=module_service.go:82 msg=starting module=ingester
+level=info ts=2026-09-17T05:14:40.028151977Z caller=ingester.go:564 component=ingester msg="recovering from checkpoint"
+level=info ts=2026-09-17T05:14:40.028167518Z caller=basic_lifecycler.go:301 msg="instance not found in the ring" instance=b22e8465e986 ring=compactor
+level=info ts=2026-09-17T05:14:40.028174185Z caller=basic_lifecycler_delegates.go:63 msg="not loading tokens from file, tokens file pathis empty"
+level=info ts=2026-09-17T05:14:40.028191727Z caller=ring.go:361 msg="ring doesn't exist in KV store yet"
+level=info ts=2026-09-17T05:14:40.028204185Z caller=module_service.go:82 msg=starting module=distributor
+level=info ts=2026-09-17T05:14:40.028300352Z caller=compactor.go:443 msg="waiting until compactor is JOINING in the ring"
+level=info ts=2026-09-17T05:14:40.02831281Z caller=compactor.go:447 msg="compactor is JOINING in the ring"
+level=error ts=2026-09-17T05:14:40.028292143Z caller=ratestore.go:109 msg="error getting ingester clients" err="empty ring"
+level=info ts=2026-09-17T05:14:40.028331435Z caller=ring.go:361 component=distributor msg="ring doesn't exist in KV store yet"
+level=info ts=2026-09-17T05:14:40.028349685Z caller=compactor.go:457 msg="waiting until compactor is ACTIVE in the ring"
+level=info ts=2026-09-17T05:14:40.028384727Z caller=basic_lifecycler.go:301 component=distributor msg="instance not found in the ring" instance=b22e8465e986 ring=distributor
+level=info ts=2026-09-17T05:14:40.02884081Z caller=recovery.go:41 component=ingester msg="no checkpoint found, treating as no-op"
+level=info ts=2026-09-17T05:14:40.028896643Z caller=ingester.go:580 component=ingester msg="recovered WAL checkpoint recovery finished" elapsed=746.25µs errors=false
+level=info ts=2026-09-17T05:14:40.028908185Z caller=ingester.go:586 component=ingester msg="recovering from WAL"
+level=info ts=2026-09-17T05:14:40.030215768Z caller=ingester.go:602 component=ingester msg="WAL segment recovery finished" elapsed=2.065833ms errors=false
+level=info ts=2026-09-17T05:14:40.030223727Z caller=ingester.go:550 component=ingester msg="closing recoverer"
+level=info ts=2026-09-17T05:14:40.03024006Z caller=ingester.go:558 component=ingester msg="WAL recovery finished" time=2.089875ms
+level=info ts=2026-09-17T05:14:40.030276935Z caller=wal.go:157 msg=started component=wal
+level=info ts=2026-09-17T05:14:40.030405477Z caller=lifecycler.go:677 component=ingester msg="not loading tokens from file, tokens file path is empty"
+level=info ts=2026-09-17T05:14:40.030422143Z caller=ingester.go:771 component=ingester msg="sleeping for initial delay before starting periodic flushing" delay=13.654995515s
+level=info ts=2026-09-17T05:14:40.03043206Z caller=lifecycler.go:704 component=ingester msg="instance not found in ring, adding with no tokens" ring=ingester
+level=info ts=2026-09-17T05:14:40.030500852Z caller=lifecycler.go:546 component=ingester msg="auto-joining cluster after timeout" ring=ingester
+level=info ts=2026-09-17T05:14:40.15034777Z caller=ringmanager.go:203 msg="scheduler is ACTIVE in the ring"
+level=info ts=2026-09-17T05:14:40.15042027Z caller=module_service.go:82 msg=starting module=query-scheduler
+level=info ts=2026-09-17T05:14:40.15052127Z caller=module_service.go:82 msg=starting module=query-frontend
+level=info ts=2026-09-17T05:14:40.150571145Z caller=module_service.go:82 msg=starting module=querier
+level=info ts=2026-09-17T05:14:40.221789313Z caller=compactor.go:461 msg="compactor is ACTIVE in the ring"
+level=info ts=2026-09-17T05:14:40.221875646Z caller=loki.go:581 msg="Loki started" startup_time=316.296629ms
+level=info ts=2026-09-17T05:14:43.153928809Z caller=scheduler.go:653 msg="this scheduler is in the ReplicationSet, will now accept requests."
+level=info ts=2026-09-17T05:14:43.1539796Z caller=worker.go:232 component=querier msg="adding connection" addr=10.88.0.4:9095
+level=info ts=2026-09-17T05:14:45.226447169Z caller=compactor.go:522 msg="this instance has been chosen to run the compactor, starting compactor"
+level=info ts=2026-09-17T05:14:45.226627669Z caller=compactor.go:551 msg="waiting 10m0s for ring to stay stable and previous compactionsto finish before starting compactor"
+level=info ts=2026-09-17T05:14:50.151760399Z caller=frontend_scheduler_worker.go:107 msg="adding connection to scheduler" addr=10.88.0.4:9095
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+Ingester not ready: waiting for 15s after being ready
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/metrics | head
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0# HELP deprecated_flags_inuse_total The number of deprecated flags currently set.
+# TYPE deprecated_flags_inuse_total counter
+deprecated_flags_inuse_total 0
+# HELP go_cgo_go_to_c_calls_calls_total Count of calls made from Go to C by the current process. Sourced from /cgo/go-to-c-calls:calls.
+# TYPE go_cgo_go_to_c_calls_calls_total counter
+go_cgo_go_to_c_calls_calls_total 0
+# HELP go_cpu_classes_gc_mark_assist_cpu_seconds_total Estimated total CPU time goroutines spent performing GC tasks to assist the GC and prevent it from falling behind the application. This metric is an overestimate, and not directly comparable to system CPU time measurements. Compare only with other /cpu/classes metrics. Sourced from /cpu/classes/gc/mark/assist:cpu-seconds.
+# TYPE go_cpu_classes_gc_mark_assist_cpu_seconds_total counter
+go_cpu_classes_gc_mark_assist_cpu_seconds_total 0.002907296
+# HELP go_cpu_classes_gc_mark_dedicated_cpu_seconds_total Estimated total CPU time spent performing GC tasks on processors (as defined by GOMAXPROCS) dedicated to those tasks. This metric is an overestimate, and not directly comparable to system CPU time measurements. Compare only with other /cpu/classes metrics. Sourced from /cpu/classes/gc/mark/dedicated:cpu-seconds.
+100 64755    0 64755    0     0  7510k      0 --:--:-- --:--:-- --:--:-- 7904k
+curl: (23) Failure writing output to destination, passed 2048 returned 0
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+ready
+eerthana@Mac-2910 podman-migration-poc % cat ~/podman-migration-poc/logs/application.log
+{"timestamp":"2026-09-17T05:10:12.693Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-001"}
+keerthana@Mac-2910 podman-migration-poc % podman network create podman-logging
+podman-logging
+keerthana@Mac-2910 podman-migration-poc % podman network connect podman-logging cube-root-ms-podman
+podman network connect podman-logging loki
+keerthana@Mac-2910 podman-migration-poc % podman network inspect podman-logging
+[
+     {
+          "name": "podman-logging",
+          "id": "dbc8f61d183eab381faa1e695e1cd6d0b88426fb32f1799154ef5791708b6b84",
+          "driver": "bridge",
+          "network_interface": "podman1",
+          "created": "2026-09-17T05:16:53.743476197Z",
+          "subnets": [
+               {
+                    "subnet": "10.89.0.0/24",
+                    "gateway": "10.89.0.1"
+               }
+          ],
+          "ipv6_enabled": false,
+          "internal": false,
+          "dns_enabled": true,
+          "ipam_options": {
+               "driver": "host-local"
+          },
+          "containers": {
+               "4e64357e7c2f2e42f9c09f4f804a4c1a64ea143218abcf80f5779ba1b0ed17bb": {
+                    "name": "cube-root-ms-podman",
+                    "interfaces": {
+                         "eth1": {
+                              "subnets": [
+                                   {
+                                        "ipnet": "10.89.0.2/24",
+                                        "gateway": "10.89.0.1"
+                                   }
+                              ],
+                              "mac_address": "c2:d0:04:0c:d4:d0"
+                         }
+                    }
+               },
+               "b22e8465e98603cf1d6a49e7bf09b958caf8df80deff18f79448fd812729e398": {
+                    "name": "loki",
+                    "interfaces": {
+                         "eth1": {
+                              "subnets": [
+                                   {
+                                        "ipnet": "10.89.0.3/24",
+                                        "gateway": "10.89.0.1"
+                                   }
+                              ],
+                              "mac_address": "2e:31:c9:a0:7d:94"
+                         }
+                    }
+               }
+          }
+     }
+]
+keerthana@Mac-2910 podman-migration-poc % cat > monitoring/promtail/promtail-config.yml <<'EOF'
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: podman-application
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: podman-application
+          container: cube-root-ms-podman
+          engine: podman
+          __path__: /logs/application.log
+EOF
+keerthana@Mac-2910 podman-migration-poc % cat monitoring/promtail/promtail-config.yml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: podman-application
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: podman-application
+          container: cube-root-ms-podman
+          engine: podman
+          __path__: /logs/application.log
+keerthana@Mac-2910 podman-migration-poc % podman pull docker.io/grafana/promtail:3.5.0
+Trying to pull docker.io/grafana/promtail:3.5.0...
+Getting image source signatures
+Copying blob sha256:990bb5536bce8e2f8750316032b9e49d70793d6f62c0a7986d579a4ba5f8c1db
+Copying blob sha256:acbfb9f56dc526798e37a670906327c04a8e1aafb246b079891e440e9c2756b9
+Copying blob sha256:b926be395aa562b857e4065636f6575effe95f79b9b23e08f5699bc4a9741d06
+Copying blob sha256:3be09b22b3ba3348a2cb2838fc28cc2df62bf5014aa7a385e65a75d71722f33c
+Copying config sha256:491d8e6cce57772f93393b451755c6f38b4854afc4414d6ab1fdad060bdc0a26
+Writing manifest to image destination
+491d8e6cce57772f93393b451755c6f38b4854afc4414d6ab1fdad060bdc0a26
+keerthana@Mac-2910 podman-migration-poc % podman run -d \
+  --name promtail \
+  --network podman-logging \
+  -v "$(pwd)/monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro" \
+  -v "$(pwd)/monitoring/promtail:/tmp" \
+  -v "$(pwd)/logs:/logs:ro" \
+  docker.io/grafana/promtail:3.5.0 \
+  -config.file=/etc/promtail/config.yml
+e52440beec4952f7f484f4a1b5e0dc9281b1de0526f327f70ce802a88584b933
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED        STATUS        PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start             8 minutes ago  Up 8 minutes  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  3 minutes ago  Up 3 minutes  0.0.0.0:3100->3100/tcp  loki
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  4 seconds ago  Up 4 seconds                          promtail
+keerthana@Mac-2910 podman-migration-poc % podman logs promtail
+level=info ts=2026-09-17T05:17:55.236056569Z caller=promtail.go:135 msg="Reloading configuration file" sha3sum=416ab509ce8b7b1d53edeae9e2288c42cf7f144ea2cd5b5d467cbf228f37b28a
+level=info ts=2026-09-17T05:17:55.237678939Z caller=server.go:368 msg="server listening on addresses" http=[::]:9080 grpc=[::]:35629
+level=info ts=2026-09-17T05:17:55.237799356Z caller=main.go:173 msg="Starting Promtail" version="(version=3.5.0, branch=k248, revision=4b16bc4f)"
+level=warn ts=2026-09-17T05:17:55.237915397Z caller=promtail.go:265 msg="enable watchConfig"
+level=info ts=2026-09-17T05:18:00.237915018Z caller=filetargetmanager.go:373 msg="Adding target" key="/logs/application.log:{container=\"cube-root-ms-podman\", engine=\"podman\", job=\"podman-application\"}"
+level=info ts=2026-09-17T05:18:00.239004306Z caller=filetarget.go:343 msg="watching new directory" directory=/logs
+level=info ts=2026-09-17T05:18:00.241218424Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T05:18:00.241323716Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:0 Whence:0}"
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-LOG-002","amount":250}'
+{"success":true,"transaction":{"transactionId":"TXN-LOG-002","amount":250,"timestamp":"2026-09-17T05:18:53.557Z"}}%                      
+keerthana@Mac-2910 podman-migration-poc % tail -n 5 logs/application.log
+{"timestamp":"2026-09-17T05:10:12.693Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-001"}
+{"timestamp":"2026-09-17T05:18:53.560Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-002"}
+keerthana@Mac-2910 podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query' \
+  --data-urlencode 'query={container="cube-root-ms-podman"}'
+log queries are not supported as an instant query type, please change your query to a range query type%                                  
+keerthana@Mac-2910 podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"}' \
+  --data-urlencode 'limit=20'
+{"status":"success","data":{"resultType":"streams","result":[{"stream":{"container":"cube-root-ms-podman","detected_level":"unknown","engine":"podman","filename":"/logs/application.log","job":"podman-application","service_name":"cube-root-ms-podman"},"values":[["1789622333663374343","{\"timestamp\":\"2026-09-17T05:18:53.560Z\",\"event\":\"TRANSACTION_PROCESSED\",\"transactionId\":\"TXN-LOG-002\"}"],["1789622280241597215","{\"timestamp\":\"2026-09-17T05:10:12.693Z\",\"event\":\"TRANSACTION_PROCESSED\",\"transactionId\":\"TXN-LOG-001\"}"]]}],"stats":{"summary":{"bytesProcessedPerSecond":11825,"linesProcessedPerSecond":107,"totalBytesProcessed":220,"totalLinesProcessed":2,"execTime":0.018604,"queueTime":0.000803,"subqueries":0,"totalEntriesReturned":2,"splits":2,"shards":2,"totalPostFilterLines":2,"totalStructuredMetadataBytesProcessed":16},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":1,"totalBatches":3,"totalLinesSent":2,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":220,"headChunkLines":2,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":2,"headChunkStructuredMetadataBytes":16,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":295791,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":0,"entriesRequested":1,"entriesStored":1,"bytesReceived":0,"bytesSent":0,"requests":2,"downloadTime":11333,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+keerthana@Mac-2910 podman-migration-poc % podman pull docker.io/grafana/grafana:12.1.1
+Trying to pull docker.io/grafana/grafana:12.1.1...
+Getting image source signatures
+Copying blob sha256:9f1d07f405236a143898b4b763d5e5a14ff6e6d9e80db74f85aa87aa53160ff4
+Copying blob sha256:6e174226ea690ced550e5641249a412cdbefd2d09871f3e64ab52137a54ba606
+Copying blob sha256:464d91115c2e79f2d8abaa4d034997fb2103a651478809b117b82e8b5c7911a9
+Copying blob sha256:3540d00d3a8ddb843b14737f51a2f2e574af14d872498761dfb5c9831fe66b22
+Copying blob sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1
+Copying blob sha256:ded2bfdd8adf70aa3e0cffeff770f070acdef7dbdea0a2eb0aec18244cf935b7
+Copying blob sha256:c049b4b5b81dbe2f9311c4c436945eefd0ff14a56fcb7d6f51716b8b1e1efd4c
+Copying blob sha256:6b1ef42fa3bc2ca3cabd73a56c76f2b53c569a50affea7d74e39e49bdde5d005
+Copying blob sha256:7f46d17c4b0fe75e2f741ef4a0dec54afd3bcf7fdb068a9187603b62c448d3e9
+Copying blob sha256:476716c10da134c0654a5001b311edd5af20b24335a3b19636a04f1be8ddac33
+Copying config sha256:084f3a553cf1777e85018b325d51228a6edb99d70730044bb6c56f5b04be3932
+Writing manifest to image destination
+084f3a553cf1777e85018b325d51228a6edb99d70730044bb6c56f5b04be3932
+keerthana@Mac-2910 podman-migration-poc % podman run -d \
+  --name grafana \
+  --network podman-logging \
+  -p 3000:3000 \
+  -v "$(pwd)/monitoring/grafana:/var/lib/grafana" \
+  docker.io/grafana/grafana:12.1.1
+1d8d0008ffa911bb850b96a851addf5aea68f87d8a2e2ec61e80c55a7c06cfbd
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start             14 minutes ago  Up 14 minutes  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  9 minutes ago   Up 9 minutes   0.0.0.0:3100->3100/tcp  loki
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  6 minutes ago   Up 6 minutes                           promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         6 seconds ago   Up 6 seconds   0.0.0.0:3000->3000/tcp  grafana
+keerthana@Mac-2910 podman-migration-poc % 
+
+* Check Grafana logs:
+podman logs grafana - **HTTP Server Listen** we get
+
+Then open:
+===========
+http://localhost:3000
+
+
+Grafana's default login is:
+============================
+Username: admin
+Password: admin --> can update this one
+
+###### Log retrieval check:
+
+**Restart test container, promtail, loki**: ✅ Passed
+
+keerthana@Mac-2910 podman-migration-poc % podman restart cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start             25 minutes ago  Up 5 seconds   0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  20 minutes ago  Up 20 minutes  0.0.0.0:3100->3100/tcp  loki
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  17 minutes ago  Up 17 minutes                          promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         10 minutes ago  Up 10 minutes  0.0.0.0:3000->3000/tcp  grafana
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-RESTART-001","amount":500}'
+{"success":true,"transaction":{"transactionId":"TXN-RESTART-001","amount":500,"timestamp":"2026-09-17T05:35:27.066Z"}}%                  
+keerthana@Mac-2910 podman-migration-poc % tail -n 5 logs/application.log
+{"timestamp":"2026-09-17T05:10:12.693Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-001"}
+{"timestamp":"2026-09-17T05:18:53.560Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-002"}
+{"timestamp":"2026-09-17T05:35:27.073Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RESTART-001"}
+keerthana@Mac-2910 podman-migration-poc % 
+keerthana@Mac-2910 podman-migration-poc % podman restart promtail
+promtail
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start             27 minutes ago  Up 2 minutes   0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  22 minutes ago  Up 22 minutes  0.0.0.0:3100->3100/tcp  loki
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  19 minutes ago  Up 4 seconds                           promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         12 minutes ago  Up 12 minutes  0.0.0.0:3000->3000/tcp  grafana
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-PROMTAIL-001","amount":750}'
+{"success":true,"transaction":{"transactionId":"TXN-PROMTAIL-001","amount":750,"timestamp":"2026-09-17T05:37:29.100Z"}}%                 
+keerthana@Mac-2910 podman-migration-poc % tail -n 3 logs/application.log
+{"timestamp":"2026-09-17T05:18:53.560Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-002"}
+{"timestamp":"2026-09-17T05:35:27.073Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RESTART-001"}
+{"timestamp":"2026-09-17T05:37:29.103Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-001"}
+keerthana@Mac-2910 podman-migration-poc % podman restart loki
+loki
+keerthana@Mac-2910 podman-migration-poc % 
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS                   NAMES
+4e64357e7c2f  localhost/cube-root-ms:podman-poc  npm start             32 minutes ago  Up 6 minutes   0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  27 minutes ago  Up 6 seconds   0.0.0.0:3100->3100/tcp  loki
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  24 minutes ago  Up 4 minutes                           promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         17 minutes ago  Up 17 minutes  0.0.0.0:3000->3000/tcp  grafana
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+Ingester not ready: waiting for 15s after being ready
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+Ingester not ready: waiting for 15s after being ready
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+ready
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-LOKI-RESTART-001","amount":1000}'
+{"success":true,"transaction":{"transactionId":"TXN-LOKI-RESTART-001","amount":1000,"timestamp":"2026-09-17T05:42:38.819Z"}}%            
+keerthana@Mac-2910 podman-migration-poc %  tail -n 3 logs/application.log
+{"timestamp":"2026-09-17T05:35:27.073Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RESTART-001"}
+{"timestamp":"2026-09-17T05:37:29.103Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-001"}
+{"timestamp":"2026-09-17T05:42:38.827Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-RESTART-001"}
+
+
+**Application recreation**:
+
+****:
+
+keerthana@Mac-2910 podman-migration-poc % podman rm -f cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman ps -a
+CONTAINER ID  IMAGE                               COMMAND               CREATED         STATUS                    PORTS                           NAMES
+b49ea2614a7c                                                            6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp, 0.0.0.0:27017->27017/tcp  f31df1fb1106-infra
+d8e2559e5602  localhost/podman-poc-app:pod        node app.js           6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp, 0.0.0.0:27017->27017/tcp  podman-app
+cf0aa34751bb  docker.io/library/mongo:8           mongod                6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp, 0.0.0.0:27017->27017/tcp  podman-mongodb
+c3cc372c14a2                                                            6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp                           0625b91c0000-infra
+36d65eaeda31  docker.io/library/mongo:7           mongod                6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp, 27017/tcp                 mern-mongodb
+12795a7ef310  localhost/user-service:latest       npm start             6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp                           mern-user-service
+0edb28ddb9fd  localhost/product-service:latest    npm start             6 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp                           mern-product-service
+827fc97a8dcc  localhost/api-gateway:latest        npm start             5 days ago      Exited (0) 292 years ago  0.0.0.0:3000->3000/tcp                           mern-api-gateway
+4e47e20fb91b  localhost/cube-transaction-ms:test  node --max_old_sp...  45 hours ago    Exited (0) 41 hours ago   0.0.0.0:6000->6000/tcp                           cube-transaction-test
+b22e8465e986  docker.io/grafana/loki:3.5.0        -config.file=/etc...  32 minutes ago  Up 5 minutes              0.0.0.0:3100->3100/tcp                           loki
+e52440beec49  docker.io/grafana/promtail:3.5.0    -config.file=/etc...  29 minutes ago  Up 9 minutes                           promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                          22 minutes ago  Up 22 minutes             0.0.0.0:3000->3000/tcp                           grafana
+keerthana@Mac-2910 podman-migration-poc % podman run -d \
+  --name cube-root-ms-podman \
+  --network podman-logging \
+  -p 3001:3001 \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/logs:/logs" \
+  -e CONTAINER_ENGINE=podman \
+  localhost/cube-root-ms:podman-poc
+7689e768a9fba2412563ddbe8647f7f5e3ecd32e7a9823e7ef1cd841a5ae3ae3
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS                   NAMES
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  32 minutes ago  Up 5 minutes   0.0.0.0:3100->3100/tcp  loki
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  29 minutes ago  Up 10 minutes                          promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         22 minutes ago  Up 22 minutes  0.0.0.0:3000->3000/tcp  grafana
+7689e768a9fb  localhost/cube-root-ms:podman-poc  npm start             4 seconds ago   Up 4 seconds   0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"7689e768a9fb"}%                                                                             
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-RECREATE-001","amount":1500}'
+{"success":true,"transaction":{"transactionId":"TXN-RECREATE-001","amount":1500,"timestamp":"2026-09-17T05:47:37.085Z"}}%                
+keerthana@Mac-2910 podman-migration-poc % tail -n 5 logs/application.log
+{"timestamp":"2026-09-17T05:18:53.560Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-002"}
+{"timestamp":"2026-09-17T05:35:27.073Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RESTART-001"}
+{"timestamp":"2026-09-17T05:37:29.103Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-001"}
+{"timestamp":"2026-09-17T05:42:38.827Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-RESTART-001"}
+{"timestamp":"2026-09-17T05:47:37.089Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RECREATE-001"}
+keerthana@Mac-2910 podman-migration-poc % 
+
+**Why did the logs survive?**
+    *Because the log file is not stored inside the container.*
+When we created the app, we mounted:
+-----------------------------------
+~/podman-migration-poc/logs
+          ↓
+       /logs
+   inside container
+
+Your command:
+-------------
+-v "$(pwd)/logs:/logs"
+
+means:
+------
+Mac host
+└── ~/podman-migration-poc/logs/application.log
+                 │
+                 │ mounted
+                 ▼
+        Container /logs/application.log
+
+So when you did:
+
+podman rm -f cube-root-ms-podman
+
+the container disappeared, but the host file remained.
+
+Then the new container:
+
+7689e768a9fb
+
+mounted the same host directory, so it immediately saw the existing log file.
+
+And Grafana?
+=============
+Grafana is reading from Loki, not directly from the application container:
+---------------------------       -----------------------------
+Application
+    ↓
+Host application.log
+    ↓
+Promtail
+    ↓
+Loki storage
+    ↓
+Grafana
+
+keerthana@Mac-2910 podman-migration-poc % podman stop promtail
+promtail
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED            STATUS         PORTS                   NAMES
+b22e8465e986  docker.io/grafana/loki:3.5.0       -config.file=/etc...  About an hour ago  Up 35 minutes  0.0.0.0:3100->3100/tcp  loki
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         53 minutes ago     Up 53 minutes  0.0.0.0:3000->3000/tcp  grafana
+7689e768a9fb  localhost/cube-root-ms:podman-poc  npm start             30 minutes ago     Up 30 minutes  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-PROMTAIL-DOWN-001","amount":2000}'
+{"success":true,"transaction":{"transactionId":"TXN-PROMTAIL-DOWN-001","amount":2000,"timestamp":"2026-09-17T06:17:52.178Z"}}%           
+keerthana@Mac-2910 podman-migration-poc % tail -n 3 logs/application.log
+{"timestamp":"2026-09-17T05:42:38.827Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-RESTART-001"}
+{"timestamp":"2026-09-17T05:47:37.089Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RECREATE-001"}
+{"timestamp":"2026-09-17T06:17:52.186Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-DOWN-001"}
+keerthana@Mac-2910 podman-migration-poc % podman start promtail
+promtail
+keerthana@Mac-2910 podman-migration-poc % 
+
+
+keerthana@Mac-2910 podman-migration-poc % podman stop loki
+loki
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED            STATUS            PORTS                   NAMES
+e52440beec49  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  About an hour ago  Up 17 minutes                             promtail
+1d8d0008ffa9  docker.io/grafana/grafana:12.1.1                         About an hour ago  Up About an hour  0.0.0.0:3000->3000/tcp  grafana
+7689e768a9fb  localhost/cube-root-ms:podman-poc  npm start             48 minutes ago     Up 48 minutes     0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-LOKI-DOWN-001","amount":3000}'
+{"success":true,"transaction":{"transactionId":"TXN-LOKI-DOWN-001","amount":3000,"timestamp":"2026-09-17T06:36:02.428Z"}}%               
+keerthana@Mac-2910 podman-migration-poc % tail -n 3 logs/application.log
+{"timestamp":"2026-09-17T05:47:37.089Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RECREATE-001"}
+{"timestamp":"2026-09-17T06:17:52.186Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-DOWN-001"}
+{"timestamp":"2026-09-17T06:36:02.432Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-DOWN-001"}
+keerthana@Mac-2910 podman-migration-poc % podman logs --tail 30 promtail
+level=info ts=2026-09-17T05:17:55.237799356Z caller=main.go:173 msg="Starting Promtail" version="(version=3.5.0, branch=k248, revision=4b16bc4f)"
+level=warn ts=2026-09-17T05:17:55.237915397Z caller=promtail.go:265 msg="enable watchConfig"
+level=info ts=2026-09-17T05:18:00.237915018Z caller=filetargetmanager.go:373 msg="Adding target" key="/logs/application.log:{container=\"cube-root-ms-podman\", engine=\"podman\", job=\"podman-application\"}"
+level=info ts=2026-09-17T05:18:00.239004306Z caller=filetarget.go:343 msg="watching new directory" directory=/logs
+level=info ts=2026-09-17T05:18:00.241218424Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T05:18:00.241323716Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:0 Whence:0}"
+level=info ts=2026-09-17T05:37:20.204096254Z caller=promtail.go:135 msg="Reloading configuration file" sha3sum=416ab509ce8b7b1d53edeae9e2288c42cf7f144ea2cd5b5d467cbf228f37b28a
+level=info ts=2026-09-17T05:37:20.2120091Z caller=server.go:368 msg="server listening on addresses" http=[::]:9080 grpc=[::]:45899
+level=info ts=2026-09-17T05:37:20.212188351Z caller=main.go:173 msg="Starting Promtail" version="(version=3.5.0, branch=k248, revision=4b16bc4f)"
+level=warn ts=2026-09-17T05:37:20.212333143Z caller=promtail.go:265 msg="enable watchConfig"
+level=info ts=2026-09-17T05:37:25.212945005Z caller=filetargetmanager.go:373 msg="Adding target" key="/logs/application.log:{container=\"cube-root-ms-podman\", engine=\"podman\", job=\"podman-application\"}"
+level=info ts=2026-09-17T05:37:25.213849131Z caller=filetarget.go:343 msg="watching new directory" directory=/logs
+level=info ts=2026-09-17T05:37:25.215896218Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T05:37:25.216060509Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:313 Whence:0}"
+level=info ts=2026-09-17T06:18:04.674740313Z caller=promtail.go:135 msg="Reloading configuration file" sha3sum=416ab509ce8b7b1d53edeae9e2288c42cf7f144ea2cd5b5d467cbf228f37b28a
+level=info ts=2026-09-17T06:18:04.682839864Z caller=server.go:368 msg="server listening on addresses" http=[::]:9080 grpc=[::]:37097
+level=info ts=2026-09-17T06:18:04.682958697Z caller=main.go:173 msg="Starting Promtail" version="(version=3.5.0, branch=k248, revision=4b16bc4f)"
+level=warn ts=2026-09-17T06:18:04.683082739Z caller=promtail.go:265 msg="enable watchConfig"
+level=info ts=2026-09-17T06:18:09.68341384Z caller=filetargetmanager.go:373 msg="Adding target" key="/logs/application.log:{container=\"cube-root-ms-podman\", engine=\"podman\", job=\"podman-application\"}"
+level=info ts=2026-09-17T06:18:09.684266591Z caller=filetarget.go:343 msg="watching new directory" directory=/logs
+level=info ts=2026-09-17T06:18:09.687360511Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T06:18:09.687388803Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:641 Whence:0}"
+level=warn ts=2026-09-17T06:36:03.710888712Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:04.458481824Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:06.185882048Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:09.541453706Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:14.214054986Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:24.576759833Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:53.828097717Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:37:43.569569623Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+keerthana@Mac-2910 podman-migration-poc % podman start loki
+loki
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+Ingester not ready: waiting for 15s after being ready
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3100/ready
+ready
+keerthana@Mac-2910 podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"} |= "TXN-LOKI-DOWN-001"' \
+  --data-urlencode 'limit=20'
+{"status":"success","data":{"resultType":"streams","result":[],"stats":{"summary":{"bytesProcessedPerSecond":48803,"linesProcessedPerSecond":323,"totalBytesProcessed":1055,"totalLinesProcessed":7,"execTime":0.021617,"queueTime":0.000886,"subqueries":0,"totalEntriesReturned":0,"splits":2,"shards":2,"totalPostFilterLines":0,"totalStructuredMetadataBytesProcessed":188},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":1,"totalBatches":2,"totalLinesSent":0,"store":{"totalChunksRef":1,"totalChunksDownloaded":1,"chunksDownloadTime":11105389,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":120,"headChunkLines":1,"decompressedBytes":935,"decompressedLines":6,"compressedBytes":300,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":8,"decompressedStructuredMetadataBytes":180},"chunkRefsFetchTime":444543,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":0,"entriesRequested":1,"entriesStored":1,"bytesReceived":0,"bytesSent":0,"requests":2,"downloadTime":145666,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+keerthana@Mac-2910 podman-migration-poc % 
+
+**Grafana Not retierive the log of loki down time**:
+
+2026-09-17 11:48:09.687	
+{"timestamp":"2026-09-17T06:17:52.186Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-DOWN-001"}
+	2026-09-17 11:17:37.253	
+{"timestamp":"2026-09-17T05:47:37.089Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RECREATE-001"}
+	2026-09-17 11:12:39.078	
+{"timestamp":"2026-09-17T05:42:38.827Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-RESTART-001"}
+	2026-09-17 11:07:29.248	
+{"timestamp":"2026-09-17T05:37:29.103Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-001"}
+	2026-09-17 11:05:27.302	
+{"timestamp":"2026-09-17T05:35:27.073Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RESTART-001"}
+	2026-09-17 10:48:53.663	
+{"timestamp":"2026-09-17T05:18:53.560Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-002"}
+	2026-09-17 10:48:00.241	
+{"timestamp":"2026-09-17T05:10:12.693Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOG-001"}
+
+
+keerthana@Mac-2910 podman-migration-poc % du -sh logs
+du -sh monitoring/loki
+4.0K    logs
+ 68K    monitoring/loki
+keerthana@Mac-2910 podman-migration-poc % TOTAL_REQUESTS=1000 CONCURRENCY=10 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 1000
+Concurrency  : 10
+keerthana@Mac-2910 podman-migration-poc % du -sh logs
+du -sh monitoring/loki
+4.0K    logs
+100K    monitoring/loki
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"7689e768a9fb"}%                                                                             
+keerthana@Mac-2910 podman-migration-poc % grep -c "TRANSACTION_PROCESSED" logs/application.log
+8
+keerthana@Mac-2910 podman-migration-poc % tail -n 5 logs/application.log
+{"timestamp":"2026-09-17T05:37:29.103Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-001"}
+{"timestamp":"2026-09-17T05:42:38.827Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-RESTART-001"}
+{"timestamp":"2026-09-17T05:47:37.089Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-RECREATE-001"}
+{"timestamp":"2026-09-17T06:17:52.186Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-PROMTAIL-DOWN-001"}
+{"timestamp":"2026-09-17T06:36:02.432Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-LOKI-DOWN-001"}
+keerthana@Mac-2910 podman-migration-poc % cat scripts/load-test.sh
+#!/bin/bash
+
+set -e
+
+TOTAL_REQUESTS=${TOTAL_REQUESTS:-1000}
+CONCURRENCY=${CONCURRENCY:-10}
+
+echo "================================"
+echo "Transaction Load Test"
+echo "================================"
+
+echo "Requests     : $TOTAL_REQUESTS"
+echo "Concurrency  : $CONCURRENCY"
+
+seq $TOTAL_REQUESTS | xargs -P $CONCURRENCY -I {} \
+  curl -s \
+  -X POST \
+  http://localhost:3101/transactions \
+  -H "Content-Type: application/json" \
+  -d "{\"transactionId\":\"TXN-{}\",\"amount\":100}" \
+  > /dev/null
+
+echo ""
+echo "Load test completed"
+
+echo ""
+echo "Application metrics:"
+
+curl -s http://localhost:3101/metrics/local%                                                                                             
+keerthana@Mac-2910 podman-migration-poc % grep "localhost" scripts/load-test.sh
+  http://localhost:3101/transactions \
+curl -s http://localhost:3101/metrics/local
+keerthana@Mac-2910 podman-migration-poc % grep "localhost" scripts/load-test.sh
+  http://localhost:3101/transactions \
+curl -s http://localhost:3101/metrics/local
+keerthana@Mac-2910 podman-migration-poc % nano scripts/load-test.sh
+keerthana@Mac-2910 podman-migration-poc % grep "localhost" scripts/load-test.sh
+  http://localhost:3001/transactions \
+curl -s http://localhost:3001/metrics/local
+keerthana@Mac-2910 podman-migration-poc % TOTAL_REQUESTS=100 CONCURRENCY=10 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 100
+Concurrency  : 10
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":3581.910108124,"memory":{"rss":58740736,"heapUsed":9826280,"heapTotal":11583488},"storage":{"transactionsBytes":8607,"logsBytes":10655}}%                                                                                                                      
+keerthana@Mac-2910 podman-migration-poc % grep -c "TRANSACTION_PROCESSED" logs/application.log
+108
+keerthana@Mac-2910 podman-migration-poc % 
+keerthana@Mac-2910 podman-migration-poc % du -sh logs
+du -sh monitoring/loki
+ 12K    logs
+ 96K    monitoring/loki
+keerthana@Mac-2910 podman-migration-poc % TOTAL_REQUESTS=1000 CONCURRENCY=20 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 1000
+Concurrency  : 20
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":3725.076011435,"memory":{"rss":65114112,"heapUsed":11905688,"heapTotal":16302080},"storage":{"transactionsBytes":88500,"logsBytes":109548}}%                                                                                                                   
+keerthana@Mac-2910 podman-migration-poc % grep -c "TRANSACTION_PROCESSED" logs/application.log
+1108
+keerthana@Mac-2910 podman-migration-poc % du -sh logs
+du -sh monitoring/loki
+128K    logs
+224K    monitoring/loki
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3001/metrics/local
+{"pid":13,"uptime":3734.396939368,"memory":{"rss":65114112,"heapUsed":11925504,"heapTotal":16302080},"storage":{"transactionsBytes":88500,"logsBytes":109548}}%                                                                                                                   
+keerthana@Mac-2910 podman-migration-poc % 
+keerthana@Mac-2910 podman-migration-poc % du -sh logs
+du -sh monitoring/loki
+128K    logs
+224K    monitoring/loki
+keerthana@Mac-2910 podman-migration-poc % TOTAL_REQUESTS=10000 CONCURRENCY=50 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 10000
+Concurrency  : 50
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":3850.877977805,"memory":{"rss":82923520,"heapUsed":14314592,"heapTotal":33865728},"storage":{"transactionsBytes":897394,"logsBytes":1108442}}%                                                                                                                 
+keerthana@Mac-2910 podman-migration-poc % grep -c "TRANSACTION_PROCESSED" logs/application.log
+du -sh logs
+du -sh monitoring/loki
+curl http://localhost:3001/metrics/local
+11108
+1.1M    logs
+2.2M    monitoring/loki
+{"pid":13,"uptime":3897.14324716,"memory":{"rss":82923520,"heapUsed":14339760,"heapTotal":33865728},"storage":{"transactionsBytes":897394,"logsBytes":1108442}}%                                                                                                                  
+keerthana@Mac-2910 podman-migration-poc % podman stats --no-stream
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO             BLOCK IO           PIDS        CPU TIME   AVG CPU %
+b22e8465e986  loki                 0.85%       82.62MB / 2.035GB  4.06%       251.8kB / 270.1kB  0B / 0B            11          7.706546s   0.85%
+e52440beec49  promtail             0.35%       35.32MB / 2.035GB  1.74%       23.85kB / 229.8kB  139.3kB / 0B       11          7.395206s   0.35%
+1d8d0008ffa9  grafana              0.36%       258.1MB / 2.035GB  12.68%      24.01MB / 285.1kB  189.2MB / 22.98MB  20          19.345031s  0.36%
+7689e768a9fb  cube-root-ms-podman  0.28%       59.75MB / 2.035GB  2.94%       4.138kB / 1.188kB  73.73kB / 4.096kB  18          10.971465s  0.28%
+keerthana@Mac-2910 podman-migration-poc % 
+
+**One important finding**:
+
+Your current logging architecture is:
+-------------------------------------
+Application
+    ↓
+/logs/application.log
+    ↓
+Promtail
+    ↓
+Loki
+    ↓
+Grafana
+
+*The application is independent of Loki, which is good*.
+
+But:
+-----
+Loki DOWN
+   ↓
+Application log ✅
+   ↓
+Promtail retry ⚠️
+   ↓
+Loki comes back
+   ↓
+Missed log ❌
+
+
+**Log rotation**:
+
+keerthana@Mac-2910 podman-migration-poc % ls -lh logs/application.log
+-rw-r--r--  1 keerthana  staff   1.1M Sep 17 12:22 logs/application.log
+keerthana@Mac-2910 podman-migration-poc % tail -n 2 logs/application.log
+{"timestamp":"2026-09-17T06:52:06.229Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-9999"}
+{"timestamp":"2026-09-17T06:52:06.232Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-10000"}
+keerthana@Mac-2910 podman-migration-poc % 
+
+1. Rename the current log:
+keerthana@Mac-2910 podman-migration-poc % mv logs/application.log logs/application.log.1
+keerthana@Mac-2910 podman-migration-poc % ls -lh logs/
+total 2176
+-rw-r--r--@ 1 keerthana  staff   1.1M Sep 17 12:22 application.log.1
+keerthana@Mac-2910 podman-migration-poc % 
+
+2. Now generate one transaction:
+keerthana@Mac-2910 podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-ROTATION-001","amount":500}'
+{"success":true,"transaction":{"transactionId":"TXN-ROTATION-001","amount":500,"timestamp":"2026-09-17T07:05:01.832Z"}}%                 
+keerthana@Mac-2910 podman-migration-poc % ls -lh logs/
+total 2184
+-rw-r--r--  1 keerthana  staff   108B Sep 17 12:35 application.log
+-rw-r--r--@ 1 keerthana  staff   1.1M Sep 17 12:22 application.log.1
+keerthana@Mac-2910 podman-migration-poc % tail -n 3 logs/application.log.1
+{"timestamp":"2026-09-17T06:52:06.220Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-9998"}
+{"timestamp":"2026-09-17T06:52:06.229Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-9999"}
+{"timestamp":"2026-09-17T06:52:06.232Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-10000"}
+keerthana@Mac-2910 podman-migration-poc % 
+
+**Result**:
+| Test                                | Result |
+| ----------------------------------- | ------ |
+| Rename old log                      | ✅      |
+| Application continues running       | ✅      |
+| New `application.log` created       | ✅      |
+| Old logs preserved                  | ✅      |
+| New transaction written to new file | ✅      |
+- So our application uses fs.appendFileSync() and opens the file for each write, meaning it handled this manual rotation nicely.
+
+**So we should verify that Promtail noticed the new file and is collecting the new transaction.**:
+
+keerthana@Mac-2910 podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"} |= "TXN-ROTATION-001"' \
+  --data-urlencode 'limit=20'
+{"status":"success","data":{"resultType":"streams","result":[{"stream":{"container":"cube-root-ms-podman","detected_level":"unknown","engine":"podman","filename":"/logs/application.log","job":"podman-application","service_name":"cube-root-ms-podman"},"values":[["1789628706325241880","{\"timestamp\":\"2026-09-17T07:05:01.840Z\",\"event\":\"TRANSACTION_PROCESSED\",\"transactionId\":\"TXN-ROTATION-001\"}"]]}],"stats":{"summary":{"bytesProcessedPerSecond":78819303,"linesProcessedPerSecond":547574,"totalBytesProcessed":1598196,"totalLinesProcessed":11103,"execTime":0.020277,"queueTime":0.001001,"subqueries":0,"totalEntriesReturned":1,"splits":2,"shards":2,"totalPostFilterLines":1,"totalStructuredMetadataBytesProcessed":304930},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":2,"totalBatches":3,"totalLinesSent":1,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":136969,"headChunkLines":1280,"decompressedBytes":1461227,"decompressedLines":9823,"compressedBytes":98230,"totalDuplicates":0,"postFilterLines":1,"headChunkStructuredMetadataBytes":10240,"decompressedStructuredMetadataBytes":294690},"chunkRefsFetchTime":331211,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":1,"entriesRequested":1,"entriesStored":1,"bytesReceived":221,"bytesSent":0,"requests":2,"downloadTime":268001,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+keerthana@Mac-2910 podman-migration-poc % 
+
+✅ Log rotation + Promtail + Loki all worked.
+
+**Let's check whether Promtail is still tracking the old rotated file or only the new file. This matters because with frequent rotations, we don't want duplicate/missing logs.**:
+
+keerthana@Mac-2910 podman-migration-poc % podman logs --tail 30 promtail
+level=info ts=2026-09-17T05:37:25.215896218Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T05:37:25.216060509Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:313 Whence:0}"
+level=info ts=2026-09-17T06:18:04.674740313Z caller=promtail.go:135 msg="Reloading configuration file" sha3sum=416ab509ce8b7b1d53edeae9e2288c42cf7f144ea2cd5b5d467cbf228f37b28a
+level=info ts=2026-09-17T06:18:04.682839864Z caller=server.go:368 msg="server listening on addresses" http=[::]:9080 grpc=[::]:37097
+level=info ts=2026-09-17T06:18:04.682958697Z caller=main.go:173 msg="Starting Promtail" version="(version=3.5.0, branch=k248, revision=4b16bc4f)"
+level=warn ts=2026-09-17T06:18:04.683082739Z caller=promtail.go:265 msg="enable watchConfig"
+level=info ts=2026-09-17T06:18:09.68341384Z caller=filetargetmanager.go:373 msg="Adding target" key="/logs/application.log:{container=\"cube-root-ms-podman\", engine=\"podman\", job=\"podman-application\"}"
+level=info ts=2026-09-17T06:18:09.684266591Z caller=filetarget.go:343 msg="watching new directory" directory=/logs
+level=info ts=2026-09-17T06:18:09.687360511Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T06:18:09.687388803Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:641 Whence:0}"
+level=warn ts=2026-09-17T06:36:03.710888712Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:04.458481824Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:06.185882048Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:09.541453706Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:14.214054986Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:24.576759833Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:36:53.828097717Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+level=warn ts=2026-09-17T06:37:43.569569623Z caller=client.go:419 component=client host=loki:3100 msg="error sending batch, will retry" status=-1 tenant= error="Post \"http://loki:3100/loki/api/v1/push\": dial tcp: lookup loki on 10.89.0.1:53: no such host"
+ts=2026-09-17T07:04:22.0671775Z caller=log.go:168 level=info msg="Re-opening moved/deleted file /logs/application.log ..."
+ts=2026-09-17T07:04:22.068407421Z caller=log.go:168 level=info msg="Waiting for /logs/application.log to appear..."
+level=info ts=2026-09-17T07:04:26.318749539Z caller=tailer.go:207 component=tailer msg="skipping update of position for a file which does not currently exist" path=/logs/application.log
+level=info ts=2026-09-17T07:04:26.319883584Z caller=filetarget.go:362 msg="removing directory from watcher" directory=/logs
+level=info ts=2026-09-17T07:04:26.320202877Z caller=tailer.go:207 component=tailer msg="skipping update of position for a file which does not currently exist" path=/logs/application.log
+level=info ts=2026-09-17T07:04:26.320331085Z caller=tailer.go:164 component=tailer msg="tail routine: tail channel closed, stopping tailer" path=/logs/application.log reason=null
+level=info ts=2026-09-17T07:04:26.320355002Z caller=tailer.go:155 component=tailer msg="tail routine: exited" path=/logs/application.log
+level=info ts=2026-09-17T07:04:26.320424669Z caller=tailer.go:118 component=tailer msg="position timer: exited" path=/logs/application.log
+level=info ts=2026-09-17T07:04:26.320496336Z caller=tailer.go:245 component=tailer msg="stopped tailing file" path=/logs/application.log
+level=info ts=2026-09-17T07:05:06.319385736Z caller=filetarget.go:343 msg="watching new directory" directory=/logs
+level=info ts=2026-09-17T07:05:06.32455892Z caller=tailer.go:147 component=tailer msg="tail routine: started" path=/logs/application.log
+ts=2026-09-17T07:05:06.324943588Z caller=log.go:168 level=info msg="Seeked /logs/application.log - &{Offset:0 Whence:0}"
+keerthana@Mac-2910 podman-migration-poc % 
+
+* What Promtail did
+====================
+When we renamed:
+---------------
+application.log → application.log.1
+
+Promtail detected that the original file disappeared:
+-----------------------------------------------------
+Re-opening moved/deleted file /logs/application.log
+Waiting for /logs/application.log to appear...
+
+Then when the application created the new file:
+-----------------------------------------------
+application.log
+
+Promtail started watching it again:
+-----------------------------------
+tail routine: started path=/logs/application.log
+Seeked /logs/application.log - Offset:0
+
+And we already verified TXN-ROTATION-001 reached Loki. ✅
+
+**Final log-rotation result**:
+
+application.log
+      ↓ rename
+application.log.1        ✅ old log preserved
+      ↓
+Promtail detects change   ✅
+      ↓
+new application.log       ✅
+      ↓
+Promtail watches new file  ✅
+      ↓
+Loki receives new logs    ✅
+
+###### Podman VM restart behavior:
+
+1. Check current restart policy:
+keerthana@Mac-2910 podman-migration-poc % podman inspect -f '{{.Name}} -> RestartPolicy={{.HostConfig.RestartPolicy.Name}}' \
+  cube-root-ms-podman loki promtail grafana
+cube-root-ms-podman -> RestartPolicy=no
+loki -> RestartPolicy=no
+promtail -> RestartPolicy=no
+grafana -> RestartPolicy=no
+
+2. test actual Podman VM restart:
+keerthana@Mac-2910 podman-migration-poc % podman machine stop
+Machine "podman-machine-default" stopped successfully
+keerthana@Mac-2910 podman-migration-poc % podman machine start
+Starting machine "podman-machine-default"
+
+This machine is currently configured in rootless mode. If your containers
+require root permissions (e.g. ports < 1024), or if you run into compatibility
+issues with non-podman clients, you can switch using the following command:
+
+        podman machine set --rootful
+
+API forwarding listening on: /var/folders/vs/93wqfx315h3d4x4ghb4508mr0000gn/T/podman/podman-machine-default-api.sock
+
+The system helper service is not installed; the default Docker API socket
+address can't be used by podman. If you would like to install it, run the following commands:
+
+        sudo /opt/homebrew/Cellar/podman/6.1.1/bin/podman-mac-helper install
+        podman machine stop; podman machine start
+
+You can still connect Docker API clients by setting DOCKER_HOST using the
+following command in your terminal session:
+
+        export DOCKER_HOST='unix:///var/folders/vs/93wqfx315h3d4x4ghb4508mr0000gn/T/podman/podman-machine-default-api.sock'
+
+Machine "podman-machine-default" started successfully
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
+keerthana@Mac-2910 podman-migration-poc % 
+
+* So:
+-----
+Podman VM restart → containers did NOT automatically start.
+
+This is because all four containers have:
+
+RestartPolicy=no
+
+Important conclusion:
+=====================
+This is not a Podman limitation. It's because we created the containers without a restart policy.
+
+For production, we need to decide/configure something like:
+----------------------------------------------------------
+--restart=always
+or:
+--restart=unless-stopped
+
+**Current POC result**:
+Podman machine restart: ⚠️ Manual container restart required with current configuration.
+
+
+**test restart=always with only the application**:
+keerthana@Mac-2910 podman-migration-poc % podman ps -a --filter name=cube-root-ms-podman
+CONTAINER ID  IMAGE                              COMMAND     CREATED      STATUS                    PORTS                   NAMES
+7689e768a9fb  localhost/cube-root-ms:podman-poc  npm start   2 hours ago  Exited (1) 3 minutes ago  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman rm -f cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman run -d \
+  --name cube-root-ms-podman \
+  --restart=always \
+  --network podman-logging \
+  -p 3001:3001 \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/logs:/logs" \
+  -e CONTAINER_ENGINE=podman \
+  localhost/cube-root-ms:podman-poc
+d7bb3d2f6dc682814bcda19331cca4d46486a4076a6ece12e61b11146d7d862d
+keerthana@Mac-2910 podman-migration-poc % podman inspect -f '{{.Name}} -> RestartPolicy={{.HostConfig.RestartPolicy.Name}}' cube-root-ms-podman
+cube-root-ms-podman -> RestartPolicy=always
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"d7bb3d2f6dc6"}%                                                                             
+keerthana@Mac-2910 podman-migration-poc % 
+
+
+**test VM restart**:
+
+keerthana@Mac-2910 podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"d7bb3d2f6dc6"}%                                                                             
+keerthana@Mac-2910 podman-migration-poc % podman machine stop
+Machine "podman-machine-default" stopped successfully
+keerthana@Mac-2910 podman-migration-poc % podman machine start
+Starting machine "podman-machine-default"
+
+This machine is currently configured in rootless mode. If your containers
+require root permissions (e.g. ports < 1024), or if you run into compatibility
+issues with non-podman clients, you can switch using the following command:
+
+        podman machine set --rootful
+
+API forwarding listening on: /var/folders/vs/93wqfx315h3d4x4ghb4508mr0000gn/T/podman/podman-machine-default-api.sock
+
+The system helper service is not installed; the default Docker API socket
+address can't be used by podman. If you would like to install it, run the following commands:
+
+        sudo /opt/homebrew/Cellar/podman/6.1.1/bin/podman-mac-helper install
+        podman machine stop; podman machine start
+
+You can still connect Docker API clients by setting DOCKER_HOST using the
+following command in your terminal session:
+
+        export DOCKER_HOST='unix:///var/folders/vs/93wqfx315h3d4x4ghb4508mr0000gn/T/podman/podman-machine-default-api.sock'
+
+Machine "podman-machine-default" started successfully
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
+keerthana@Mac-2910 podman-migration-poc % 
+
+Result:
+========
+Even with:
+
+RestartPolicy=always
+
+after:
+
+Podman machine stop
+→ Podman machine start
+→ podman ps
+
+the *application is not automatically running*.
+
+
+**First, let's prove restart=always itself works**:
+eerthana@Mac-2910 podman-migration-poc % podman start cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND     CREATED            STATUS        PORTS                   NAMES
+d7bb3d2f6dc6  localhost/cube-root-ms:podman-poc  npm start   About an hour ago  Up 4 seconds  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman kill cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
+
+**Result: restart=always**:
+
+We did:
+-------
+podman start
+→ app running
+→ podman kill
+→ podman ps
+
+*Result*: No container running
+- So restart=always did not automatically restart the container after podman kill in this Podman setup.               -->*important notes*
+
+
+**We need to check how Podman 6.1.1 handles restart policies and whether a service manager is required.**:
+
+keerthana@Mac-2910 podman-migration-poc % podman inspect cube-root-ms-podman | grep -A 8 -B 2 RestartPolicy
+                    ]
+               },
+               "RestartPolicy": {
+                    "Name": "always",
+                    "MaximumRetryCount": 0
+               },
+               "AutoRemove": false,
+               "AutoRemoveImage": false,
+               "Annotations": {
+                    "io.container.manager": "libpod",
+                    "org.opencontainers.image.stopSignal": "15",
+keerthana@Mac-2910 podman-migration-poc % 
+keerthana@Mac-2910 podman-migration-poc % podman start cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman kill cube-root-ms-podman -->*after 5sec we close the event terminal*
+cube-root-ms-podman
+keerthana@Mac-2910 podman-migration-poc % podman events                                            --> *this terminal will run while kill the podman*
+2026-09-17 14:26:59.953552373 +0530 IST container sync b49ea2614a7c99ccadc60b2c5ae9a67b0d083fbdfa0d5277cbbc89b7c7f9aa4e (image=, name=f31df1fb1106-infra, pod_id=f31df1fb1106339facb1a4505dd9f3a9e704c2c019f39e93f2cdb2b5723f1234)
+2026-09-17 14:26:59.953775915 +0530 IST container sync d8e2559e5602e7d85623885c6cdf10a5ed09fc746ebd1d91edf1e4546be09ced (image=localhost/podman-poc-app:pod, name=podman-app, pod_id=f31df1fb1106339facb1a4505dd9f3a9e704c2c019f39e93f2cdb2b5723f1234, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.953969248 +0530 IST container sync cf0aa34751bbd3d01ebcba40481ed0ca7988e879fadb7b36e067b734dcbd35e7 (image=docker.io/library/mongo:8, name=podman-mongodb, pod_id=f31df1fb1106339facb1a4505dd9f3a9e704c2c019f39e93f2cdb2b5723f1234, org.opencontainers.image.version=24.04)
+2026-09-17 14:26:59.954121581 +0530 IST container sync c3cc372c14a2866b533b529d1f53c973803429ae557e0164ae9c21332e6f8e31 (image=, name=0625b91c0000-infra, pod_id=0625b91c00009a1fa597926d014d3382ec2ebbb2faab4ce7ccf1bbc19c10feff)
+2026-09-17 14:26:59.954275206 +0530 IST container sync 36d65eaeda313f716163ffd43e91341314189a6d1b463a31b846c2fd127cbd0d (image=docker.io/library/mongo:7, name=mern-mongodb, pod_id=0625b91c00009a1fa597926d014d3382ec2ebbb2faab4ce7ccf1bbc19c10feff, org.opencontainers.image.version=22.04)
+2026-09-17 14:26:59.954413998 +0530 IST container sync 12795a7ef3107fc91c261060d993bc49b9d429b3e4a544b37781e9abe43a7fc7 (image=localhost/user-service:latest, name=mern-user-service, pod_id=0625b91c00009a1fa597926d014d3382ec2ebbb2faab4ce7ccf1bbc19c10feff, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.954567748 +0530 IST container sync 0edb28ddb9fd3a8517f646171f65de15556784f3259b1831cf51a2163a9d2208 (image=localhost/product-service:latest, name=mern-product-service, pod_id=0625b91c00009a1fa597926d014d3382ec2ebbb2faab4ce7ccf1bbc19c10feff, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.954726873 +0530 IST container sync 827fc97a8dccaffd93e94b1cd7dd4af3368461afdd6378bb72245ed47e5598e5 (image=localhost/api-gateway:latest, name=mern-api-gateway, pod_id=0625b91c00009a1fa597926d014d3382ec2ebbb2faab4ce7ccf1bbc19c10feff, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.954885622 +0530 IST container sync 4e47e20fb91b46ba62bbdf21a9f23943bf4a6429054c3e9de3987584db49924c (image=localhost/cube-transaction-ms:test, name=cube-transaction-test, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.955028414 +0530 IST container sync b22e8465e98603cf1d6a49e7bf09b958caf8df80deff18f79448fd812729e398 (image=docker.io/grafana/loki:3.5.0, name=loki)
+2026-09-17 14:26:59.955181331 +0530 IST container sync e52440beec4952f7f484f4a1b5e0dc9281b1de0526f327f70ce802a88584b933 (image=docker.io/grafana/promtail:3.5.0, name=promtail, org.opencontainers.image.ref.name=ubuntu, org.opencontainers.image.version=24.04)
+2026-09-17 14:26:59.955335747 +0530 IST container sync 1d8d0008ffa911bb850b96a851addf5aea68f87d8a2e2ec61e80c55a7c06cfbd (image=docker.io/grafana/grafana:12.1.1, name=grafana, maintainer=Grafana Labs <hello@grafana.com>, org.opencontainers.image.source=https://github.com/grafana/grafana)
+2026-09-17 14:26:59.95551408 +0530 IST container sync d7bb3d2f6dc682814bcda19331cca4d46486a4076a6ece12e61b11146d7d862d (image=localhost/cube-root-ms:podman-poc, name=cube-root-ms-podman, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.960308245 +0530 IST container kill d7bb3d2f6dc682814bcda19331cca4d46486a4076a6ece12e61b11146d7d862d (image=localhost/cube-root-ms:podman-poc, name=cube-root-ms-podman, io.buildah.version=1.45.0)
+2026-09-17 14:26:59.966941825 +0530 IST container died d7bb3d2f6dc682814bcda19331cca4d46486a4076a6ece12e61b11146d7d862d (image=localhost/cube-root-ms:podman-poc, name=cube-root-ms-podman, io.buildah.version=1.45.0)
+2026-09-17 14:27:00.1111095 +0530 IST container cleanup d7bb3d2f6dc682814bcda19331cca4d46486a4076a6ece12e61b11146d7d862d (image=localhost/cube-root-ms:podman-poc, name=cube-root-ms-podman, io.buildah.version=1.45.0)
+^C
+keerthana@Mac-2910 podman-migration-poc %
+
+**What the events show**:
+
+After:
+--------
+podman kill cube-root-ms-podman
+
+Podman generated:
+-----------------
+container kill
+container died
+container cleanup
+
+*But there is no restart event*. So in this POC, RestartPolicy=always is present, but it did not restart the container after podman kill.
+
+*Podman's --restart policy does not take effect when the container is stopped using podman kill or podman stop.*        -->*important notes*
+
+**simulate an actual application failure**:
+
+* We will make the Node.js process exit inside the container. This is different from podman kill:
+
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman exec cube-root-ms-podman sh -c 'kill 1'
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND     CREATED      STATUS         PORTS                   NAMES
+d7bb3d2f6dc6  localhost/cube-root-ms:podman-poc  npm start   2 hours ago  Up 45 seconds  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+
+**Grafana stop and test**:
+
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman stop grafana
+grafana
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-GRAFANA-DOWN-001","amount":700}'
+{"success":true,"transaction":{"transactionId":"TXN-GRAFANA-DOWN-001","amount":700,"timestamp":"2026-09-17T09:16:11.489Z"}}%        
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"} |= "TXN-GRAFANA-DOWN-001"' \
+  --data-urlencode 'limit=20'
+{"status":"success","data":{"resultType":"streams","result":[{"stream":{"container":"cube-root-ms-podman","detected_level":"unknown","engine":"podman","filename":"/logs/application.log","job":"podman-application","service_name":"cube-root-ms-podman"},"values":[["1789636571758748259","{\"timestamp\":\"2026-09-17T09:16:11.503Z\",\"event\":\"TRANSACTION_PROCESSED\",\"transactionId\":\"TXN-GRAFANA-DOWN-001\"}"]]}],"stats":{"summary":{"bytesProcessedPerSecond":39583,"linesProcessedPerSecond":332,"totalBytesProcessed":238,"totalLinesProcessed":2,"execTime":0.006013,"queueTime":0.000493,"subqueries":0,"totalEntriesReturned":1,"splits":2,"shards":2,"totalPostFilterLines":1,"totalStructuredMetadataBytesProcessed":16},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":1,"totalBatches":3,"totalLinesSent":1,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":238,"headChunkLines":2,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":1,"headChunkStructuredMetadataBytes":16,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":292125,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":1,"entriesRequested":1,"entriesStored":0,"bytesReceived":226,"bytesSent":0,"requests":1,"downloadTime":250666,"queryLengthServed":2656000000000},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman start grafana
+grafana
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3000/api/health
+{
+  "database": "ok",
+  "version": "12.1.1",
+  "commit": "df5de8219b41d1e639e003bf5f3a85913761d167"
+}%                                                                
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+*So Grafana came back successfully and its own persistent data is healthy.*
+
+**Restart policies for monitoring**:
+
+
+✅ latest test is PASS: Grafana restarted and the log remained available in Loki.
+
+
+###### Remaining Test Plan:
+
+1. Batch 1 — Restart policies for monitoring:
+* Currently:
+-------------
+App      → restart=always
+Loki     → restart=no
+Promtail → restart=no
+Grafana  → restart=no
+First configure the three monitoring containers with restart policies.
+Because these containers already exist, recreate them with --restart=always.
+
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman rm -f loki
+loki
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman rm -f promtail
+promtail
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name promtail \
+  --restart=always \
+  --network podman-logging \
+  -v "$(pwd)/monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro" \
+  -v "$(pwd)/monitoring/promtail:/tmp" \
+  -v "$(pwd)/logs:/logs:ro" \
+  docker.io/grafana/promtail:3.5.0 \
+  -config.file=/etc/promtail/config.yml
+9f570c521139d0d5368245f693d9e2c73181b99d91b49da38eda2f6c1efa3b40
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name loki \
+  --restart=always \
+  --network podman-logging \
+  -p 3100:3100 \
+  -v "$(pwd)/monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro" \
+  -v "$(pwd)/monitoring/loki:/loki" \
+  docker.io/grafana/loki:3.5.0 \
+  -config.file=/etc/loki/config.yml
+739916f94c1c6f9c94bdbd34889829b20e2ad6ff30f73a6d71e7158d513915aa
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman rm -f grafana
+grafana
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name grafana \
+  --restart=always \
+  --network podman-logging \
+  -p 3000:3000 \
+  -v "$(pwd)/monitoring/grafana:/var/lib/grafana" \
+  docker.io/grafana/grafana:12.1.1
+3a66b0a1865008749afe9bb9a8802b4b05dd94258c4bc887f9be1f4b8353e3f7
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect -f '{{.Name}} -> RestartPolicy={{.HostConfig.RestartPolicy.Name}}' \
+  cube-root-ms-podman loki promtail grafana
+cube-root-ms-podman -> RestartPolicy=always
+loki -> RestartPolicy=always
+promtail -> RestartPolicy=always
+grafana -> RestartPolicy=always
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND               CREATED         STATUS         PORTS        NAMES
+d7bb3d2f6dc6  localhost/cube-root-ms:podman-poc  npm start             2 hours ago     Up 29 minutes  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+9f570c521139  docker.io/grafana/promtail:3.5.0   -config.file=/etc...  33 seconds ago  Up 33 seconds        promtail
+739916f94c1c  docker.io/grafana/loki:3.5.0       -config.file=/etc...  26 seconds ago  Up 26 seconds  0.0.0.0:3100->3100/tcp  loki
+3a66b0a18650  docker.io/grafana/grafana:12.1.1                         10 seconds ago  Up 10 seconds  0.0.0.0:3000->3000/tcp  grafana
+
+2. Batch 2 — Verify monitoring after recreation:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3100/ready
+Ingester not ready: waiting for 15s after being ready
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3100/ready
+ready
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3000/api/health
+{
+  "database": "ok",
+  "version": "12.1.1",
+  "commit": "df5de8219b41d1e639e003bf5f3a85913761d167"
+}%                                                                                                                    
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"d7bb3d2f6dc6"}%                                                          
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl -X POST http://localhost:3001/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TXN-MONITOR-RECREATE-001","amount":1000}'
+{"success":true,"transaction":{"transactionId":"TXN-MONITOR-RECREATE-001","amount":1000,"timestamp":"2026-09-17T09:34:33.843Z"}}%                                                                                                           
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % grep "TXN-MONITOR-RECREATE-001" logs/application.log
+{"timestamp":"2026-09-17T09:34:33.846Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-MONITOR-RECREATE-001"}
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"} |= "TXN-MONITOR-RECREATE-001"' \
+  --data-urlencode 'limit=20'
+{"status":"success","data":{"resultType":"streams","result":[{"stream":{"container":"cube-root-ms-podman","detected_level":"unknown","engine":"podman","filename":"/logs/application.log","job":"podman-application","service_name":"cube-root-ms-podman"},"values":[["1789637674020784034","{\"timestamp\":\"2026-09-17T09:34:33.846Z\",\"event\":\"TRANSACTION_PROCESSED\",\"transactionId\":\"TXN-MONITOR-RECREATE-001\"}"]]}],"stats":{"summary":{"bytesProcessedPerSecond":44478,"linesProcessedPerSecond":369,"totalBytesProcessed":361,"totalLinesProcessed":3,"execTime":0.008116,"queueTime":0.000492,"subqueries":0,"totalEntriesReturned":1,"splits":2,"shards":2,"totalPostFilterLines":1,"totalStructuredMetadataBytesProcessed":24},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":1,"totalBatches":3,"totalLinesSent":1,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":361,"headChunkLines":3,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":1,"headChunkStructuredMetadataBytes":24,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":252166,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":0,"entriesRequested":1,"entriesStored":1,"bytesReceived":0,"bytesSent":0,"requests":2,"downloadTime":80750,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+3. Batch 3 — Podman VM restart with all restart policies:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman machine stop
+podman machine start
+Machine "podman-machine-default" stopped successfully
+Starting machine "podman-machine-default"
+
+This machine is currently configured in rootless mode. If your containers
+require root permissions (e.g. ports < 1024), or if you run into compatibility
+issues with non-podman clients, you can switch using the following command:
+
+        podman machine set --rootful
+
+API forwarding listening on: /var/folders/vs/93wqfx315h3d4x4ghb4508mr0000gn/T/podman/podman-machine-default-api.sock
+
+The system helper service is not installed; the default Docker API socket
+address can't be used by podman. If you would like to install it, run the following commands:
+
+        sudo /opt/homebrew/Cellar/podman/6.1.1/bin/podman-mac-helper install
+        podman machine stop; podman machine start
+
+You can still connect Docker API clients by setting DOCKER_HOST using the
+following command in your terminal session:
+
+        export DOCKER_HOST='unix:///var/folders/vs/93wqfx315h3d4x4ghb4508mr0000gn/T/podman/podman-machine-default-api.sock'
+
+Machine "podman-machine-default" started successfully
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman ps
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman ps
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3001/health
+curl http://localhost:3100/ready
+curl http://localhost:3000/api/health
+curl: (7) Failed to connect to localhost port 3001 after 0 ms: Couldn't connect to server
+curl: (7) Failed to connect to localhost port 3100 after 0 ms: Couldn't connect to server
+curl: (7) Failed to connect to localhost port 3000 after 0 ms: Couldn't connect to server
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect -f '{{.Name}} -> {{.State.Status}} -> RestartPolicy={{.HostConfig.RestartPolicy.Name}}' \
+  cube-root-ms-podman loki promtail grafana
+cube-root-ms-podman -> exited -> RestartPolicy=always
+loki -> exited -> RestartPolicy=always
+promtail -> exited -> RestartPolicy=always
+grafana -> exited -> RestartPolicy=always
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+4. Batch 4 — Storage persistence after VM restart:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % ls -lh data/
+ls -lh logs/
+du -sh data logs monitoring/loki monitoring/grafana
+total 1792
+-rw-r--r--  1 keerthana  staff   877K Sep 17 15:04 transactions.log
+total 2184
+-rw-r--r--  1 keerthana  staff   448B Sep 17 15:04 application.log
+-rw-r--r--@ 1 keerthana  staff   1.1M Sep 17 12:22 application.log.1
+896K    data
+1.1M    logs
+180K    monitoring/loki
+ 52M    monitoring/grafana
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % grep "TXN-MONITOR-RECREATE-001" logs/application.log
+{"timestamp":"2026-09-17T09:34:33.846Z","event":"TRANSACTION_PROCESSED","transactionId":"TXN-MONITOR-RECREATE-001"}
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"} |= "TXN-MONITOR-RECREATE-001"' \
+  --data-urlencode 'limit=20'
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+5. Batch 5 — Resource limits / failure scenario:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman stats --no-stream
+ID          NAME        CPU %       MEM USAGE / LIMIT  MEM %       NET IO      BLOCK IO    PIDS        CPU TIME    AVG CPU %
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect cube-root-ms-podman | grep -A 20 -B 5 '"Memory"'
+                    0,
+                    0
+               ],
+               "Isolation": "",
+               "CpuShares": 0,
+               "Memory": 0,
+               "NanoCpus": 0,
+               "CgroupParent": "user.slice",
+               "BlkioWeight": 0,
+               "BlkioWeightDevice": null,
+               "BlkioDeviceReadBps": null,
+               "BlkioDeviceWriteBps": null,
+               "BlkioDeviceReadIOps": null,
+               "BlkioDeviceWriteIOps": null,
+               "CpuPeriod": 0,
+               "CpuQuota": 0,
+               "CpuRealtimePeriod": 0,
+               "CpuRealtimeRuntime": 0,
+               "CpusetCpus": "",
+               "CpusetMems": "",
+               "Devices": [],
+               "DiskQuota": 0,
+               "KernelMemory": 0,
+               "MemoryReservation": 0,
+               "MemorySwap": 0,
+               "MemorySwappiness": null,
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect cube-root-ms-podman | grep -A 20 -B 5 '"NanoCpus"' 
+                    0
+               ],
+               "Isolation": "",
+               "CpuShares": 0,
+               "Memory": 0,
+               "NanoCpus": 0,
+               "CgroupParent": "user.slice",
+               "BlkioWeight": 0,
+               "BlkioWeightDevice": null,
+               "BlkioDeviceReadBps": null,
+               "BlkioDeviceWriteBps": null,
+               "BlkioDeviceReadIOps": null,
+               "BlkioDeviceWriteIOps": null,
+               "CpuPeriod": 0,
+               "CpuQuota": 0,
+               "CpuRealtimePeriod": 0,
+               "CpuRealtimeRuntime": 0,
+               "CpusetCpus": "",
+               "CpusetMems": "",
+               "Devices": [],
+               "DiskQuota": 0,
+               "KernelMemory": 0,
+               "MemoryReservation": 0,
+               "MemorySwap": 0,
+               "MemorySwappiness": null,
+               "OomKillDisable": false,
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+6. Batch 6 — Final high-volume test:
+We've already successfully tested:
+
+100 transactions   ✅
+1,000 transactions ✅
+10,000 transactions ✅
+
+For the POC, I'd next test:
+
+50,000 transactions
+
+but don't run this until we finish the restart/storage tests, because we should keep the environment stable first.
+
+**Overall findings now**:
+| Area                        | Result                                                 |
+| --------------------------- | ------------------------------------------------------ |
+| Application restart         | ✅                                                      |
+| Application process failure | ✅ auto-restart                                         |
+| Container recreation        | ✅                                                      |
+| Loki restart                | ✅                                                      |
+| Promtail restart            | ✅                                                      |
+| Grafana restart             | ✅                                                      |
+| Grafana failure isolation   | ✅                                                      |
+| Promtail downtime recovery  | ✅                                                      |
+| Log rotation                | ✅                                                      |
+| 100 transactions            | ✅                                                      |
+| 1,000 transactions          | ✅                                                      |
+| 10,000 transactions         | ✅                                                      |
+| Storage persistence         | ✅                                                      |
+| Loki complete outage        | ⚠️ current logging design can lose/recovery-delay logs |
+| VM restart                  | ⚠️ containers don't automatically start                |
+| Container CPU limit         | ❌ not configured                                       |
+| Container memory limit      | ❌ not configured                                       |
+
+7. Next batch: Resource-limit testing:
+
+* Test A — Memory limit:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman rm -f cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name cube-root-ms-podman \
+  --restart=always \
+  --network podman-logging \
+  -p 3001:3001 \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/logs:/logs" \
+  -e CONTAINER_ENGINE=podman \
+  --memory=128m \
+  localhost/cube-root-ms:podman-poc
+22b265c6d23591f94d2a59d964c941ea37de93135762531aa9bd8be45bafc029
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect -f '{{.Name}} -> Memory={{.HostConfig.Memory}}' cube-root-ms-podman
+cube-root-ms-podman -> Memory=134217728
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman stats --no-stream
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO          BLOCK IO      PIDS  CPU TIME    AVG CPU %
+22b265c6d235  cube-root-ms-podman  5.60%       123.2MB / 134.2MB  91.78%      1.306kB / 628B  93.33MB / 0B  18  594.227ms   5.60%
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3001/health
+{"status":"UP","engine":"podman","hostname":"22b265c6d235"}%                                                          
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+* Test B — Small load:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % TOTAL_REQUESTS=1000 CONCURRENCY=20 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 1000
+Concurrency  : 20
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":44.524703059,"memory":{"rss":65196032,"heapUsed":12094056,"heapTotal":15515648},"storage":{"transactionsBytes":977660,"logsBytes":99341}}%                                                                               
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman stats --no-stream
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO          BLOCK IO           PIDS       CPU TIME    AVG CPU %
+22b265c6d235  cube-root-ms-podman  3.70%       129.7MB / 134.2MB  96.64%      1.586kB / 768B  93.41MB / 4.096kB  18       1.721752s   3.70%
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % curl http://localhost:3001/metrics/local
+{"pid":13,"uptime":50.420583619,"memory":{"rss":65196032,"heapUsed":12125352,"heapTotal":15515648},"storage":{"transactionsBytes":977660,"logsBytes":99341}}%                                                                               
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+**Result**:
+| Check                           | Result       | Observation                                                            |
+| ------------------------------- | ------------ | ---------------------------------------------------------------------- |
+| Memory limit                    | ✅ Applied    | `128 MB`                                                               |
+| Initial memory                  | ⚠️ High      | `123.2 MB / 134.2 MB` → **91.78%**                                     |
+| Health                          | ✅ PASS       | App stayed `UP`                                                        |
+| 1,000 requests / 20 concurrency | ✅ PASS       | Load completed                                                         |
+| Memory after load               | ⚠️ Very high | `129.7 MB / 134.2 MB` → **96.64%**                                     |
+| App process RSS                 | ~65 MB       | Node itself is not using 129 MB; container total includes other memory |
+| Crash/OOM                       | ❌ No         | No OOM observed                                                        |
+
+**Next batch — CPU limit + 10K load**:
+
+* Test C — CPU limit:
+
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman rm -f cube-root-ms-podman
+cube-root-ms-podman
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name cube-root-ms-podman \
+  --restart=always \
+  --network podman-logging \
+  -p 3001:3001 \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/logs:/logs" \
+  -e CONTAINER_ENGINE=podman \
+  --memory=256m \
+  --cpus=0.5 \
+  localhost/cube-root-ms:podman-poc
+37afe186da5dd0adbda9680114b5bfe1f8a4cbf6c95989bfa46c33028c8c41cb
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect -f '{{.Name}} -> Memory={{.HostConfig.Memory}} CPUQuota={{.HostConfig.CPUQuota}} CPUPeriod={{.HostConfig.CPUPeriod}}' cube-root-ms-podman
+cube-root-ms-podman -> Memory=268435456 CPUQuota=Error: template: inspect:1:76: executing "inspect" at <.HostConfig.CPUQuota>: can't evaluate field CPUQuota in type *define.InspectContainerHostConfig
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman stats --no-stream
+
+curl http://localhost:3001/health
+
+TOTAL_REQUESTS=1000 CONCURRENCY=20 ./scripts/load-test.sh
+
+podman stats --no-stream
+
+curl http://localhost:3001/metrics/local
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO         BLOCK IO      PIDS CPU TIME    AVG CPU %
+37afe186da5d  cube-root-ms-podman  4.08%       34.28MB / 268.4MB  12.77%      1.36kB / 628B  1.729MB / 0B  18 477.786ms   4.08%
+{"status":"UP","engine":"podman","hostname":"37afe186da5d"}================================
+Transaction Load Test
+================================
+Requests     : 1000
+Concurrency  : 20
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":20.474606679,"memory":{"rss":65196032,"heapUsed":12106528,"heapTotal":16302080},"storage":{"transactionsBytes":1057553,"logsBytes":198234}}
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO        BLOCK IO      PIDSCPU TIME    AVG CPU %
+37afe186da5d  cube-root-ms-podman  7.44%       40.93MB / 268.4MB  15.25%      1.5kB / 698B  1.729MB / 0B  181.555691s   7.44%
+{"pid":13,"uptime":20.601587788,"memory":{"rss":65196032,"heapUsed":12137376,"heapTotal":16302080},"storage":{"transactionsBytes":1057553,"logsBytes":198234}}%                                                                             
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % TOTAL_REQUESTS=10000 CONCURRENCY=50 ./scripts/load-test.sh
+
+podman stats --no-stream
+
+curl http://localhost:3001/health
+
+grep -c "TRANSACTION_PROCESSED" logs/application.log
+================================
+Transaction Load Test
+================================
+Requests     : 10000
+Concurrency  : 50
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":154.889997464,"memory":{"rss":83509248,"heapUsed":14605384,"heapTotal":34127872},"storage":{"transactionsBytes":1866447,"logsBytes":1197128}}
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO         BLOCK IO           PIDS      CPU TIME    AVG CPU %
+37afe186da5d  cube-root-ms-podman  5.43%       60.01MB / 268.4MB  22.35%      1.92kB / 908B  1.729MB / 4.096kB  18      8.428329s   5.43%
+{"status":"UP","engine":"podman","hostname":"37afe186da5d"}12004
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+* Current conclusion:
+
+256 MB memory + 0.5 CPU handled 10K requests without failure.
+
+Compared with the previous 128 MB test, this is much more comfortable:
+----------------------------------------------------------------------
+128 MB limit → ~97% container memory after 1K ⚠️
+256 MB limit → ~22% container memory after 10K ✅
+
+So the 128 MB limit is too tight for this POC workload, while 256 MB currently has substantial headroom.
+
+
+**Next: 50K + storage test**:
+
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % echo "=== BEFORE ==="
+du -sh data logs monitoring/loki
+ls -lh data/transactions.log logs/application.log
+=== BEFORE ===
+2.1M    data
+3.1M    logs
+180K    monitoring/loki
+-rw-r--r--  1 keerthana  staff   1.8M Sep 17 16:47 data/transactions.log
+-rw-r--r--  1 keerthana  staff   1.1M Sep 17 16:47 logs/application.log
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % TOTAL_REQUESTS=50000 CONCURRENCY=100 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 50000
+Concurrency  : 100
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":856.217600363,"memory":{"rss":83951616,"heapUsed":12863776,"heapTotal":34127872},"storage":{"transactionsBytes":5955341,"logsBytes":6236022}}%                                                                           
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % echo "=== PODMAN STATS ==="
+podman stats --no-stream
+
+echo "=== APP HEALTH ==="
+curl http://localhost:3001/health
+
+echo "=== APP METRICS ==="
+curl http://localhost:3001/metrics/local
+=== PODMAN STATS ===
+ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NET IO           BLOCK IO           PIDS        CPU TIME    AVG CPU %
+37afe186da5d  cube-root-ms-podman  4.34%       60.11MB / 268.4MB  22.39%      2.2kB / 1.048kB  1.729MB / 4.096kB  18        37.428458s  4.34%
+=== APP HEALTH ===
+{"status":"UP","engine":"podman","hostname":"37afe186da5d"}=== APP METRICS ===
+{"pid":13,"uptime":861.940697476,"memory":{"rss":83951616,"heapUsed":12910528,"heapTotal":34127872},"storage":{"transactionsBytes":5955341,"logsBytes":6236022}}%                                                                           
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % echo "=== AFTER ==="
+du -sh data logs monitoring/loki
+ls -lh data/transactions.log logs/application.log
+=== AFTER ===
+6.1M    data
+7.1M    logs
+180K    monitoring/loki
+-rw-r--r--  1 keerthana  staff   5.7M Sep 17 16:59 data/transactions.log
+-rw-r--r--  1 keerthana  staff   5.9M Sep 17 16:59 logs/application.log
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % echo "=== TRANSACTION COUNT ==="
+grep -c "TRANSACTION_PROCESSED" logs/application.log
+=== TRANSACTION COUNT ===
+62004
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND     CREATED         STATUS         PORTS                   NAMES
+37afe186da5d  localhost/cube-root-ms:podman-poc  npm start   14 minutes ago  Up 14 minutes  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+**50K result**:
+| Test                | Result                           |
+| ------------------- | -------------------------------- |
+| Requests            | **50,000**                       |
+| Concurrency         | **100**                          |
+| Load test           | ✅ Completed                      |
+| App health          | ✅ UP                             |
+| Container           | ✅ Still running                  |
+| Memory              | **60.11 MB / 268.4 MB (22.39%)** |
+| CPU snapshot        | **4.34%**                        |
+| Node RSS            | ~84 MB                           |
+| Transaction log     | **1.8 MB → 5.7 MB**              |
+| Application log     | **1.1 MB → 5.9 MB**              |
+| Loki storage        | **180K → 180K**                  |
+| Logged transactions | **62,004**                       |
+
