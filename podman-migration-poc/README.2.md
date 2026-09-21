@@ -1154,3 +1154,294 @@ ID            NAME                 CPU %       MEM USAGE / LIMIT  MEM %       NE
 7c1d2f4789da  cube-root-ms-podman  2.47%       58.26MB / 2.035GB  2.86%       2.7kB / 1.188kB  106.5kB / 1.082GB  18          1m4.524399s  2.47%
 keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
 
+
+### Loki down time check again:
+keerthana@Mac-47 podman-migration-poc % ./scripts/run-podman.sh
+================================
+Building Podman image
+================================
+STEP 1/13: FROM node:18-alpine
+STEP 2/13: RUN apk add --no-cache git bash tzdata
+--> Using cache 0500c9b414eea66f8e078127852c72f9cf64a9b8a808fe8ce2126269ce71def4
+--> 0500c9b414ee
+STEP 3/13: ENV TZ=Asia/Calcutta
+--> Using cache 5e17c203d28b6c2718c01a64d52a1ff27136591e6b5d993e1a18f5506a96bd17
+--> 5e17c203d28b
+STEP 4/13: RUN cp /usr/share/zoneinfo/Asia/Calcutta /etc/localtime
+--> Using cache 37d5cf7dbff75fe6fd16b83d25666d039dfdbd760f5c5be8dbf6e7361a95b48b
+--> 37d5cf7dbff7
+STEP 5/13: WORKDIR /app
+--> Using cache 80170ba5a55806880ad46717b04838ce8c8a425384e97ea50a005870e4fda9e7
+--> 80170ba5a558
+STEP 6/13: COPY package*.json ./
+--> Using cache 3309564c19c1a1a4297ed3857df2d2cc7be55497f39f541a8211409b2b5a4537
+--> 3309564c19c1
+STEP 7/13: ARG API_NEWTWELVE_CACHE_BUST_RESYNC
+--> Using cache c008fc3130427893053a79536192d6d96de767daddf3549ba059f524acba2276
+--> c008fc313042
+STEP 8/13: RUN echo "api new twelve bust: $API_NEWTWELVE_CACHE_BUST_RESYNC"
+api new twelve bust: 1789966356
+--> 84e3bdb3334c
+STEP 9/13: RUN npm cache clean --force &&     npm install --legacy-peer-deps --force
+npm warn using --force Recommended protections disabled.
+npm warn using --force Recommended protections disabled.
+
+added 49 packages, and audited 50 packages in 7s
+
+5 packages are looking for funding
+  run `npm fund` for details
+
+2 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+--> a0e0ab637025
+STEP 10/13: COPY . .
+--> 5cd413472382
+STEP 11/13: RUN npm run build
+
+> cube-root-ms-podman-poc@1.0.0 build
+> node build.js
+
+Build completed
+--> 992858a1e4c6
+STEP 12/13: EXPOSE 3001
+--> 495895d0540c
+STEP 13/13: CMD ["npm", "start"]
+COMMIT cube-root-ms:podman-poc
+--> 5466ceb54e05
+Successfully tagged localhost/cube-root-ms:podman-poc
+5466ceb54e0591c9c71d76f7929c487973616eb1a95069be648b44d900f4f426
+================================
+Creating Podman volumes
+================================
+================================
+Starting container
+================================
+cube-root-ms-podman
+e2e7b53d82e298aa68d5ad20044f5aebaa9705bc6a98849c9031c70c8822ac5a
+Waiting for application...
+Podman application is UP
+{"status":"UP","engine":"podman","hostname":"e2e7b53d82e2"}%                                                                               
+keerthana@Mac-47 podman-migration-poc % >....                                                                                              
+
+echo "=== 7. Check Promtail ==="
+podman ps --filter name=promtail
+
+echo "=== 8. Query Loki for application logs ==="
+curl -sG 'http://localhost:3100/loki/api/v1/query' \
+  --data-urlencode 'query={container="cube-root-ms-podman"}' \
+  | python3 -m json.tool | head -80
+
+echo "=== 9. Final local log size ==="
+podman exec cube-root-ms-podman sh -c 'wc -c /logs/application.log'
+
+echo "=== TEST COMPLETE ==="
+=== 1. Ensure Promtail + Loki are running ===
+=== 2. Record baseline log size ===
+BASE LOG BYTES=56166675
+=== 3. Stop Loki ===
+loki
+=== 4. Generate logs while Loki is DOWN ===
+================================
+Transaction Load Test
+================================
+Requests     : 100
+Concurrency  : 10
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":15.911961906,"memory":{"rss":59207680,"heapUsed":10314280,"heapTotal":11321344},"storage":{"transactionsBytes":45662153,"logsBytes":56176467}}=== 5. Record log size after outage traffic ===
+AFTER LOG BYTES=56176467
+=== 6. Start Loki again ===
+loki
+=== 7. Check Promtail ===
+CONTAINER ID  IMAGE                             COMMAND               CREATED     STATUS        PORTS       NAMES
+9f570c521139  docker.io/grafana/promtail:3.5.0  -config.file=/etc...  3 days ago  Up 2 minutes              promtail
+=== 8. Query Loki for application logs ===
+Expecting value: line 1 column 1 (char 0)
+=== 9. Final local log size ===
+56176467 /logs/application.log
+=== TEST COMPLETE ===
+keerthana@Mac-47 podman-migration-poc % curl -v 'http://localhost:3100/ready'
+
+echo
+echo "=== Loki query ==="
+
+curl -sG 'http://localhost:3100/loki/api/v1/query' \
+  --data-urlencode 'query={container="cube-root-ms-podman"}'
+* Host localhost:3100 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:3100...
+* Connected to localhost (::1) port 3100
+> GET /ready HTTP/1.1
+> Host: localhost:3100
+> User-Agent: curl/8.7.1
+> Accept: */*
+> 
+* Request completely sent off
+< HTTP/1.1 503 Service Unavailable
+< Content-Type: text/plain; charset=utf-8
+< X-Content-Type-Options: nosniff
+< Date: Mon, 21 Sep 2026 04:54:01 GMT
+< Content-Length: 54
+< 
+Ingester not ready: waiting for 15s after being ready
+* Connection #0 to host localhost left intact
+
+=== Loki query ===
+log queries are not supported as an instant query type, please change your query to a range query type%                                    
+keerthana@Mac-47 podman-migration-poc % echo "=== WAIT FOR LOKI ==="
+sleep 20
+
+echo "=== LOKI READY ==="
+curl -s http://localhost:3100/ready
+echo
+
+echo "=== LOKI RANGE QUERY ==="
+curl -sG 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"}' \
+  --data-urlencode 'limit=10'
+echo
+
+echo "=== PROMTAIL ==="
+podman ps --filter name=promtail
+
+echo "=== LOCAL LOG SIZE ==="
+podman exec cube-root-ms-podman sh -c 'wc -c /logs/application.log'
+
+echo "=== DONE ==="
+=== WAIT FOR LOKI ===
+=== LOKI READY ===
+ready
+
+=== LOKI RANGE QUERY ===
+{"status":"success","data":{"resultType":"streams","result":[],"stats":{"summary":{"bytesProcessedPerSecond":0,"linesProcessedPerSecond":0,"totalBytesProcessed":0,"totalLinesProcessed":0,"execTime":0.013729,"queueTime":0.000256,"subqueries":0,"totalEntriesReturned":0,"splits":2,"shards":2,"totalPostFilterLines":0,"totalStructuredMetadataBytesProcessed":0},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":0,"totalBatches":2,"totalLinesSent":0,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":330834,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":0,"entriesRequested":1,"entriesStored":1,"bytesReceived":0,"bytesSent":0,"requests":2,"downloadTime":12708,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+
+=== PROMTAIL ===
+CONTAINER ID  IMAGE                             COMMAND               CREATED     STATUS        PORTS       NAMES
+9f570c521139  docker.io/grafana/promtail:3.5.0  -config.file=/etc...  3 days ago  Up 4 minutes              promtail
+=== LOCAL LOG SIZE ===
+56176467 /logs/application.log
+=== DONE ===
+keerthana@Mac-47 podman-migration-poc % echo "=== 1. ENSURE LOKI + PROMTAIL ARE READY ==="
+podman start loki 2>/dev/null || true
+podman start promtail 2>/dev/null || true
+sleep 20
+
+echo "=== 2. CREATE UNIQUE MARKER ==="
+MARKER="LOKI-OUTAGE-$(date +%s)"
+echo "MARKER=$MARKER"
+
+echo "=== 3. STOP LOKI ==="
+podman stop loki
+
+echo "=== 4. GENERATE UNIQUE LOG DURING LOKI OUTAGE ==="
+podman exec cube-root-ms-podman sh -c "echo '$MARKER' >> /logs/application.log"
+
+echo "=== 5. VERIFY MARKER EXISTS LOCALLY ==="
+podman exec cube-root-ms-podman sh -c "grep '$MARKER' /logs/application.log"
+
+echo "=== 6. START LOKI ==="
+podman start loki
+sleep 30
+
+echo "=== 7. WAIT/VERIFY LOKI ==="
+curl -s http://localhost:3100/ready
+echo
+
+echo "=== 8. SEARCH FOR THE EXACT MARKER IN LOKI ==="
+curl -sG 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode "query={container=\"cube-root-ms-podman\"} |= \"$MARKER\"" \
+  --data-urlencode 'limit=20'
+echo
+
+echo "=== TEST COMPLETE ==="
+=== 1. ENSURE LOKI + PROMTAIL ARE READY ===
+=== 2. CREATE UNIQUE MARKER ===
+MARKER=LOKI-OUTAGE-1789966793
+=== 3. STOP LOKI ===
+loki
+=== 4. GENERATE UNIQUE LOG DURING LOKI OUTAGE ===
+=== 5. VERIFY MARKER EXISTS LOCALLY ===
+LOKI-OUTAGE-1789966793
+=== 6. START LOKI ===
+loki
+=== 7. WAIT/VERIFY LOKI ===
+Ingester not ready: waiting for 15s after being ready
+
+=== 8. SEARCH FOR THE EXACT MARKER IN LOKI ===
+{"status":"success","data":{"resultType":"streams","result":[],"stats":{"summary":{"bytesProcessedPerSecond":0,"linesProcessedPerSecond":0,"totalBytesProcessed":0,"totalLinesProcessed":0,"execTime":0.016867,"queueTime":0.000516,"subqueries":0,"totalEntriesReturned":0,"splits":2,"shards":2,"totalPostFilterLines":0,"totalStructuredMetadataBytesProcessed":0},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":0,"totalBatches":2,"totalLinesSent":0,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":392374,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+
+=== TEST COMPLETE ===
+keerthana@Mac-47 podman-migration-poc % echo "=== WAIT FOR LOKI ==="                      
+sleep 20                             
+
+echo "=== LOKI READY ==="
+curl -s http://localhost:3100/ready
+echo                                  
+
+echo "=== LOKI RANGE QUERY ==="
+curl -sG 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container="cube-root-ms-podman"}' \
+  --data-urlencode 'limit=10'
+echo
+
+echo "=== PROMTAIL ==="                                                        
+podman ps --filter name=promtail
+
+echo "=== LOCAL LOG SIZE ==="                                               
+podman exec cube-root-ms-podman sh -c 'wc -c /logs/application.log'
+
+echo "=== DONE ==="
+=== WAIT FOR LOKI ===
+=== LOKI READY ===
+ready
+
+=== LOKI RANGE QUERY ===
+{"status":"success","data":{"resultType":"streams","result":[],"stats":{"summary":{"bytesProcessedPerSecond":0,"linesProcessedPerSecond":0,"totalBytesProcessed":0,"totalLinesProcessed":0,"execTime":0.007643,"queueTime":0.000288,"subqueries":0,"totalEntriesReturned":0,"splits":2,"shards":2,"totalPostFilterLines":0,"totalStructuredMetadataBytesProcessed":0},"querier":{"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"ingester":{"totalReached":2,"totalChunksMatched":0,"totalBatches":2,"totalLinesSent":0,"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,"queryReferencedStructuredMetadata":false,"chunk":{"headChunkBytes":0,"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},"chunkRefsFetchTime":288291,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0}},"cache":{"chunk":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"index":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"result":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"statsResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"volumeResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"seriesResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"labelResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0},"instantMetricResult":{"entriesFound":0,"entriesRequested":0,"entriesStored":0,"bytesReceived":0,"bytesSent":0,"requests":0,"downloadTime":0,"queryLengthServed":0}},"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false}}}}
+
+=== PROMTAIL ===
+CONTAINER ID  IMAGE                             COMMAND               CREATED     STATUS         PORTS       NAMES
+9f570c521139  docker.io/grafana/promtail:3.5.0  -config.file=/etc...  3 days ago  Up 12 minutes              promtail
+=== LOCAL LOG SIZE ===
+56176490 /logs/application.log
+=== DONE ===
+keerthana@Mac-47 podman-migration-poc %
+
+* Final Loki Log finding:
+--------------------------
+During Loki downtime, the application continues writing logs to its local persistent log file. After Loki recovery, the current Promtail/Loki setup did not recover the logs generated during the outage into Loki. Therefore, local log persistence is working, but centralized log recovery during Loki downtime is not guaranteed in the current configuration.
+
+**so exactly here we found while downtime of loki it missed that log not all logs removed from it right**?:-
+
+Exactly. **We did NOT prove that all logs were removed.**
+
+What we proved is:
+
+* During Loki downtime, the application **continued writing logs locally**. ✅
+* After Loki recovered, the specific logs generated during the outage **were not found in Loki** in our controlled test. ❌
+* Therefore, **some outage-period logs can be missed by Loki** with the current setup.
+* Existing/previous logs in Loki are **not automatically all deleted** just because Loki went down.
+
+So the correct wording is:
+
+> **“During Loki downtime, application logs continued to be persisted locally, but logs generated during the outage were not recovered into Loki after recovery. This indicates a potential log-loss gap for the outage period, not loss of all existing Loki logs.”**
+
+
+* Load Test:
+keerthana@Mac-47 podman-migration-poc % TOTAL_REQUESTS=200000 CONCURRENCY=600 ./scripts/load-test.sh
+================================
+Transaction Load Test
+================================
+Requests     : 200000
+Concurrency  : 600
+
+Load test completed
+
+Application metrics:
+{"pid":13,"uptime":2842.675506732,"memory":{"rss":83054592,"heapUsed":13926936,"heapTotal":35176448},"storage":{"transactionsBytes":62151048,"logsBytes":76465385}}%      
