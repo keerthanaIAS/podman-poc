@@ -1652,3 +1652,343 @@ hostname: '10.89.1.2'
 keerthana@Mac-47 podman-migration-poc % podman run -d --name service-b alpine:3.20 sleep 3600
 Error: creating container storage: the container name "service-b" is already in use by a41e27db843fdd2eaba389dffc3aaac71f3dea59586bbffceee1fe1d6bb1d2ba. You have to remove that container to be able to reuse that name: that name is already in use
 
+# network failovers:-
+-----------------------------------------------------------
+# Scenario 1 — Container restart → DNS/network recovery
+-----------------------------------------------------------
+
+keerthana@Mac-36 podman-migration-poc % cd /Applications/podman-poc/podman-migration-poc
+keerthana@Mac-36 podman-migration-poc % podman ps -a --filter name=service-a --filter name=service-b
+CONTAINER ID  IMAGE                            COMMAND               CREATED       STATUS                    PORTS       NAMES
+a41e27db843f  localhost/service-b:network-poc  npm start             22 hours ago  Exited (0) 292 years ago  4000/tcp    service-b
+8e3dac7c7340  localhost/service-a:network-poc  sh -c node server...  19 hours ago  Exited (0) 18 hours ago               service-a
+keerthana@Mac-36 podman-migration-poc % podman rm -f service-a service-b 2>/dev/null || true
+service-a
+service-b
+keerthana@Mac-36 podman-migration-poc % podman network rm backend-net 2>/dev/null || true
+podman network create backend-net
+backend-net
+backend-net
+keerthana@Mac-36 podman-migration-poc % podman run -d \
+  --name service-b \
+  --network backend-net \
+  -p 4000:4000 \
+  node:22-alpine \
+  node -e "require('http').createServer((req,res)=>{res.end(JSON.stringify({service:'service-b',status:'UP'}))}).listen(4000,'0.0.0.0')"
+fc0bfe1e3a945621eef6784677886aa72aedc4a46bd5bf5210fc300a82fd6c96
+keerthana@Mac-36 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                             COMMAND               CREATED        STATUS        PORTS                   NAMES
+fc0bfe1e3a94  docker.io/library/node:22-alpine  node -e require('...  3 seconds ago  Up 3 seconds  0.0.0.0:4000->4000/tcp  service-b
+keerthana@Mac-36 podman-migration-poc % podman run -d \
+  --name service-a \
+  --network backend-net \
+  node:22-alpine \
+  sleep 3600
+4254d78c3497aa1367d7171f784850d597838d1398c9c6cac7dd7029a21b91f3
+keerthana@Mac-36 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                             COMMAND               CREATED         STATUS         PORTS                   NAMES
+fc0bfe1e3a94  docker.io/library/node:22-alpine  node -e require('...  47 seconds ago  Up 48 seconds  0.0.0.0:4000->4000/tcp  service-b
+4254d78c3497  docker.io/library/node:22-alpine  sleep 3600            8 seconds ago   Up 8 seconds                           service-a
+keerthana@Mac-36 podman-migration-poc % podman exec service-a node -e "require('http').get('http://service-b:4000/health',r=>{let d='';r.on('data',x=>d+=x);r.on('end',()=>console.log(d))}).on('error',e=>console.log('ERROR:',e.message))"
+{"service":"service-b","status":"UP"}
+keerthana@Mac-36 podman-migration-poc % podman restart service-a
+service-a
+keerthana@Mac-36 podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                             COMMAND               CREATED             STATUS             PORTS                   NAMES
+fc0bfe1e3a94  docker.io/library/node:22-alpine  node -e require('...  About a minute ago  Up About a minute  0.0.0.0:4000->4000/tcp  service-b
+4254d78c3497  docker.io/library/node:22-alpine  sleep 3600            35 seconds ago      Up 5 seconds                               service-a
+keerthana@Mac-36 podman-migration-poc % podman exec service-a node -e "require('http').get('http://service-b:4000/health',r=>{let d='';r.on('data',x=>d+=x);r.on('end',()=>console.log(d))}).on('error',e=>console.log('ERROR:',e.message))"
+{"service":"service-b","status":"UP"}
+keerthana@Mac-36 podman-migration-poc % podman inspect service-a --format '{{json .NetworkSettings.Networks}}'
+{"backend-net":{"EndpointID":"","Gateway":"10.89.2.1","IPAddress":"10.89.2.4","IPPrefixLen":24,"IPv6Gateway":"","GlobalIPv6Address":"","GlobalIPv6PrefixLen":0,"MacAddress":"6e:86:65:d9:0f:39","NetworkID":"ad367daaaa8953d447a65bf7b708c0449c811cfb78c693944262d451755f367a","DriverOpts":null,"IPAMConfig":null,"Links":null,"Aliases":["4254d78c3497"]}}
+keerthana@Mac-36 podman-migration-poc % podman network inspect backend-net
+[
+     {
+          "name": "backend-net",
+          "id": "ad367daaaa8953d447a65bf7b708c0449c811cfb78c693944262d451755f367a",
+          "driver": "bridge",
+          "network_interface": "podman3",
+          "created": "2026-09-22T04:31:21.804367729Z",
+          "subnets": [
+               {
+                    "subnet": "10.89.2.0/24",
+                    "gateway": "10.89.2.1"
+               }
+          ],
+          "ipv6_enabled": false,
+          "internal": false,
+          "dns_enabled": true,
+          "ipam_options": {
+               "driver": "host-local"
+          },
+          "containers": {
+               "4254d78c3497aa1367d7171f784850d597838d1398c9c6cac7dd7029a21b91f3": {
+                    "name": "service-a",
+                    "interfaces": {
+                         "eth0": {
+                              "subnets": [
+                                   {
+                                        "ipnet": "10.89.2.4/24",
+                                        "gateway": "10.89.2.1"
+                                   }
+                              ],
+                              "mac_address": "6e:86:65:d9:0f:39"
+                         }
+                    }
+               },
+               "fc0bfe1e3a945621eef6784677886aa72aedc4a46bd5bf5210fc300a82fd6c96": {
+                    "name": "service-b",
+                    "interfaces": {
+                         "eth0": {
+                              "subnets": [
+                                   {
+                                        "ipnet": "10.89.2.2/24",
+                                        "gateway": "10.89.2.1"
+                                   }
+                              ],
+                              "mac_address": "f6:1d:f5:11:96:bc"
+                         }
+                    }
+               }
+          }
+     }
+]
+keerthana@Mac-36 podman-migration-poc % 
+
+- Container restart does not break Podman's container networking or DNS resolution.                                           -->*important note*
+
+-----------------------------------------------------------------------
+## Scenario 2 — Network failure → recovery
+-----------------------------------------------------------------------
+keerthana@Mac-36 podman-migration-poc % podman exec service-a node -e "require('http').get('http://service-b:4000/health',r=>{let d='';r.on('data',x=>d+=x);r.on('end',()=>console.log('BEFORE FAILURE:',d))}).on('error',e=>console.log('BEFORE FAILURE ERROR:',e.message))"
+BEFORE FAILURE: {"service":"service-b","status":"UP"}
+keerthana@Mac-36 podman-migration-poc % podman network disconnect backend-net service-a
+keerthana@Mac-36 podman-migration-poc % podman exec service-a node -e "require('http').get('http://service-b:4000/health',r=>{let d='';r.on('data',x=>d+=x);r.on('end',()=>console.log('AFTER FAILURE:',d))}).on('error',e=>console.log('AFTER FAILURE ERROR:',e.message))"
+AFTER FAILURE ERROR: getaddrinfo EAI_AGAIN service-b
+keerthana@Mac-36 podman-migration-poc % podman network connect backend-net service-a
+keerthana@Mac-36 podman-migration-poc % podman exec service-a node -e "require('http').get('http://service-b:4000/health',r=>{let d='';r.on('data',x=>d+=x);r.on('end',()=>console.log('AFTER RECOVERY:',d))}).on('error',e=>console.log('AFTER RECOVERY ERROR:',e.message))"
+AFTER RECOVERY: {"service":"service-b","status":"UP"}
+keerthana@Mac-36 podman-migration-poc % podman network inspect backend-net
+[
+     {
+          "name": "backend-net",
+          "id": "ad367daaaa8953d447a65bf7b708c0449c811cfb78c693944262d451755f367a",
+          "driver": "bridge",
+          "network_interface": "podman3",
+          "created": "2026-09-22T04:31:21.804367729Z",
+          "subnets": [
+               {
+                    "subnet": "10.89.2.0/24",
+                    "gateway": "10.89.2.1"
+               }
+          ],
+          "ipv6_enabled": false,
+          "internal": false,
+          "dns_enabled": true,
+          "ipam_options": {
+               "driver": "host-local"
+          },
+          "containers": {
+               "4254d78c3497aa1367d7171f784850d597838d1398c9c6cac7dd7029a21b91f3": {
+                    "name": "service-a",
+                    "interfaces": {
+                         "eth0": {
+                              "subnets": [
+                                   {
+                                        "ipnet": "10.89.2.5/24",
+                                        "gateway": "10.89.2.1"
+                                   }
+                              ],
+                              "mac_address": "56:e1:c6:a5:ef:55"
+                         }
+                    }
+               },
+               "fc0bfe1e3a945621eef6784677886aa72aedc4a46bd5bf5210fc300a82fd6c96": {
+                    "name": "service-b",
+                    "interfaces": {
+                         "eth0": {
+                              "subnets": [
+                                   {
+                                        "ipnet": "10.89.2.2/24",
+                                        "gateway": "10.89.2.1"
+                                   }
+                              ],
+                              "mac_address": "f6:1d:f5:11:96:bc"
+                         }
+                    }
+               }
+          }
+     }
+]
+keerthana@Mac-36 podman-migration-poc % 
+
+* The important part is:
+------------------------
+BEFORE FAILURE: {"service":"service-b","status":"UP"}
+
+        ↓ disconnect
+
+AFTER FAILURE ERROR: getaddrinfo EAI_AGAIN service-b
+
+        ↓ reconnect
+
+AFTER RECOVERY: {"service":"service-b","status":"UP"}
+
+Also notice that after reconnecting, service-a received a new IP:
+-----------------------------------------------------------------
+Before: 10.89.2.4
+After:  10.89.2.5
+
+Yet communication recovered using service-b DNS, so the application wasn't dependent on a fixed container IP.             -->*important note*
+
+------------------------------------------------------------------
+### networking check — host → container published port
+------------------------------------------------------------------
+keerthana@Mac-36 podman-migration-poc % curl http://localhost:4000/health
+\{"service":"service-b","status":"UP"}%   
+
+* The important part is:
+-p 4000:4000
+
+This explicitly publishes:
+      Mac localhost:4000
+              ↓
+      Podman VM
+              ↓
+      service-b:4000
+
+
+
+# two different Podman networks + multi-network container communication:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman network create network-a
+podman network create network-b
+network-a
+network-b
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name service-b \
+  --network network-b \
+  alpine \
+  sh -c 'mkdir -p /www && echo "{\"service\":\"service-b\",\"status\":\"UP\"}" > /www/health && busybox httpd -f -p 4000 -h /www'
+4eb536db3846228e53dd6ef260e5a114c8ea5ea0ac4e2996a6ca3f017f4ce74f
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman ps
+CONTAINER ID  IMAGE                              COMMAND     CREATED      STATUS      PORTS                   NAMES
+8fe96bed1006  localhost/cube-root-ms:podman-poc  npm start   5 hours ago  Up 4 hours  0.0.0.0:3001->3001/tcp  cube-root-ms-podman
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman run -d \
+  --name service-a \
+  --network network-a \
+  alpine \
+  sleep 3600
+9f8e8784e84a771f2333ca11af0c3da8b31833c1971bec0730cb4e41c4793ad0
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman exec service-a wget -qO- http://service-b:4000/health
+wget: bad address 'service-b:4000'
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+*Why*?
+service-a is on network-a, while service-b is only on network-b. They are isolated.
+
+* After connect service-a to the second network - *podman network connect network-b service-a*
+* Test again — should PASS:
+podman exec service-a wget -qO- http://service-b:4000/health
+Expected:
+{"service":"service-b","status":"UP"}
+* Verify the actual network attachments
+podman inspect service-a --format '{{json .NetworkSettings.Networks}}'
+- You should see both network-a and network-b.
+
+**So the test is**:
+one container → two networks → communicate with services on each network.
+
+**To list the one service two network command log**:
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman network ls
+NETWORK ID    NAME              DRIVER
+9012e5c7f4f0  microservice-net  bridge
+8c7dac9deaed  network-a         bridge
+b6d89539d39c  network-b         bridge
+2f259bab93aa  podman            bridge
+dbc8f61d183e  podman-logging    bridge
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect service-a --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{"\n"}}{{end}}'
+network-a
+network-b
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect service-a | grep -A 10 '"Networks"'
+               "Networks": {
+                    "network-a": {
+                         "EndpointID": "",
+                         "Gateway": "10.89.2.1",
+                         "IPAddress": "10.89.2.2",
+                         "IPPrefixLen": 24,
+                         "IPv6Gateway": "",
+                         "GlobalIPv6Address": "",
+                         "GlobalIPv6PrefixLen": 0,
+                         "MacAddress": "8a:df:11:bb:f4:d0",
+                         "NetworkID": "8c7dac9deaeda2d977456c4e6f5b9040ff7a6b810c0987e9e8e04e11190268ce",
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect service-a --format '{{.Name}} → {{range $name, $network := .NetworkSettings.Networks}}{{$name}} {{end}}'
+podman inspect service-b --format '{{.Name}} → {{range $name, $network := .NetworkSettings.Networks}}{{$name}} {{end}}'
+service-a → network-a network-b 
+service-b → network-b 
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+* Very simple distinction
+                 Podman
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+    Networking             Runtime
+        │                     │
+     bridge                  crun
+        │                     │
+ service-a                runs process
+ service-b
+
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman inspect service-a --format '{{.HostConfig.NetworkMode}}'
+bridge
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman info --format '{{.Host.OCIRuntime}}'
+{crun crun-1.29.1-1.fc44.aarch64 /usr/bin/crun crun version 1.29.1
+commit: f0d911de5587342cfeb16473bf32ecdfeaf25957
+rundir: /run/user/501/crun
+spec: 1.0.0
++SYSTEMD +SELINUX +APPARMOR +CAP +SECCOMP +EBPF +CRIU +LIBKRUN +WASM:wasmedge +JSON_C}
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % 
+
+* So:
+------
+bridge → handles container networking
+crun → creates/runs the container
+slirp4netns/pasta → can provide networking for rootless containers in configurations where they are selected
+
+* 
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman info --format '{{.Host.NetworkBackend}}'
+netavark
+keerthana@Keerthanas-MacBook-Air podman-migration-poc % podman info --debug | grep -iE 'pasta|slirp|netavark|networkBackend'
+  networkBackend: netavark
+  networkBackendInfo:
+    backend: netavark
+    package: netavark-2.1.0-1.fc44.aarch64
+    path: /usr/libexec/podman/netavark
+    version: netavark 2.1.0
+  pasta:
+    executable: /usr/bin/pasta
+      pasta 0^20260728.gf8df3f1-2.fc44.aarch64-pasta
+  rootlessNetworkCmd: pasta
+
+* So:
+-----
+Network backend: Netavark
+Rootless network command: Pasta
+slirp4netns: not being used
+Container runtime: crun
+
+* Your stack is:
+
+                 Podman
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+    Networking             Runtime
+        │                     │
+    Netavark                 crun
+        │
+   ┌────┴─────┐
+   │          │
+ bridge      pasta (Podman Advanced Slirp‑less Tunneling Adapter)
+ networks    (rootless networking)
+
