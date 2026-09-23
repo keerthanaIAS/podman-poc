@@ -1,0 +1,8 @@
+services:
+  app:
+    build: .
+    container_name: compose-test-app
+    ports:
+      - "3200:3000"
+    environment:
+      CONTAINER_ENGINE: compose

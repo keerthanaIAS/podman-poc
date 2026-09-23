@@ -1992,3 +1992,74 @@ Container runtime: crun
  bridge      pasta (Podman Advanced Slirp‑less Tunneling Adapter)
  networks    (rootless networking)
 
+# Static IP:
+keerthana@Mac-89 podman-migration-poc % cd /Applications/podman-poc/podman-migration-poc
+keerthana@Mac-89 podman-migration-poc % podman network create \
+  --subnet 10.89.10.0/24 \
+  --gateway 10.89.10.1 \
+  static-ip-test
+static-ip-test
+keerthana@Mac-89 podman-migration-poc % podman network inspect static-ip-test
+[
+     {
+          "name": "static-ip-test",
+          "id": "dc6ccf8b16c3f7710e66a8302fd7998730eb76acaa99b3c6158a78d453fbaafb",
+          "driver": "bridge",
+          "network_interface": "podman6",
+          "created": "2026-09-23T11:16:03.838521962Z",
+          "subnets": [
+               {
+                    "subnet": "10.89.10.0/24",
+                    "gateway": "10.89.10.1"
+               }
+          ],
+          "ipv6_enabled": false,
+          "internal": false,
+          "dns_enabled": true,
+          "ipam_options": {
+               "driver": "host-local"
+          },
+          "containers": {}
+     }
+]
+keerthana@Mac-89 podman-migration-poc % podman run -d \
+  --name static-ip-test \
+  --network static-ip-test \
+  --ip 10.89.10.10 \
+  localhost/cube-root-ms:podman-poc
+153519095c2845882d8d5b111c0242729a8e87a87a54feb70fe64120072921c5
+keerthana@Mac-89 podman-migration-poc % podman inspect static-ip-test \
+  --format '{{.NetworkSettings.Networks.static-ip-test.IPAddress}}'
+Error: template: inspect:1: bad character U+002D '-'
+keerthana@Mac-89 podman-migration-poc % podman inspect static-ip-test \
+  --format '{{index .NetworkSettings.Networks "static-ip-test" | .IPAddress}}'
+Error: template: inspect:1:64: executing "inspect" at <.IPAddress>: can't evaluate field IPAddress in type interface {}
+keerthana@Mac-89 podman-migration-poc % podman inspect static-ip-test \
+  --format '{{(index .NetworkSettings.Networks "static-ip-test").IPAddress}}'
+10.89.10.10
+keerthana@Mac-89 podman-migration-poc % podman restart static-ip-test
+static-ip-test
+keerthana@Mac-89 podman-migration-poc % podman inspect static-ip-test \
+  --format '{{(index .NetworkSettings.Networks "static-ip-test").IPAddress}}'
+10.89.10.10
+keerthana@Mac-89 podman-migration-poc % podman rm -f static-ip-test
+static-ip-test
+keerthana@Mac-89 podman-migration-poc % podman run -d \
+  --name static-ip-test \
+  --network static-ip-test \
+  --ip 10.89.10.10 \
+  localhost/cube-root-ms:podman-poc
+a6f1a5cff541f0c77063a97b74ac29d458549945419067394d8331b9ed34aaec
+keerthana@Mac-89 podman-migration-poc % podman inspect static-ip-test \
+  --format '{{(index .NetworkSettings.Networks "static-ip-test").IPAddress}}'
+10.89.10.10
+keerthana@Mac-89 podman-migration-poc % 
+
+* If all three checks work:
+| Test                  | Result we want              |
+| --------------------- | --------------------------- |
+| Static IP assignment  | `10.89.10.10`               |
+| Restart               | Still `10.89.10.10`         |
+| Recreate with same IP | Can get `10.89.10.10` again |
+
+* This proves Podman can support Docker Compose-style static IP requirements when explicitly configured.
